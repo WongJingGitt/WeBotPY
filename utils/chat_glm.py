@@ -56,9 +56,9 @@ def chat_with_file(file_path):
             {"role": "user", "content": "深度总结一下这份聊天的内容"}
         ]
     )
-    print(response.choices)
     return response.choices
 
 
 if __name__ == '__main__':
-    chat_with_file(r'D:\wangyingjie\WeBot\libs\chat_record.docx')
+    # chat_with_file(r'D:\wangyingjie\WeBot\libs\chat_record.docx')
+    print(bool(1))

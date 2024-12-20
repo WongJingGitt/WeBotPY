@@ -4,13 +4,11 @@ from datetime import datetime
 from base64 import b64decode
 from os import path, sep
 
-from message import TextMessageFromDB
+from libs.message import TextMessageFromDB
 
 from requests import post
 from docx import Document
 from docx.shared import Pt
-
-DATA_PATH = post('http://127.0.0.1:19001/api/userInfo').json().get('data').get('dataSavePath')
 
 
 def get_all_message(db_handle, wxid, include_image):
@@ -25,6 +23,9 @@ def get_all_message(db_handle, wxid, include_image):
 def decode_img(message: TextMessageFromDB, save_dir) -> str:
     if message.Type != '3':
         return
+
+    DATA_PATH = post('http://127.0.0.1:19001/api/userInfo').json().get('data').get('dataSavePath')
+
     message_id = message.MsgSvrID
 
     post('http://127.0.0.1:19001/api/downloadAttach', json={"msgId": message_id})

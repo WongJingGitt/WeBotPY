@@ -1,12 +1,9 @@
-import json
 from dataclasses import dataclass, field
-from typing import NewType, Optional
+from typing import NewType, Optional, Any
 from base64 import b64decode
 from re import sub
 
 from wxhook.model import Event, Response
-
-from libs.webot import WeBot as Bot
 
 MessageTypes = NewType('MessageTypes', int)
 
@@ -61,7 +58,7 @@ class MessageType:
 
 @dataclass
 class Message(Event):
-    bot: Optional[Bot] = field(default=None)
+    bot: Any = field(default=None)
     bytes_trans: str = field(default=None)
 
     @property
