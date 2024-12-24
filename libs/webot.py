@@ -1,8 +1,8 @@
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass
 from os import environ
 from typing import Literal, List, Dict
 
-from libs.write_doc import write_doc
+from utils.write_doc import write_doc
 from wxhook import Bot
 from wxhook.model import Response
 

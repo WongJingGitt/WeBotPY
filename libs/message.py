@@ -203,6 +203,12 @@ class TextMessageFromDB:
     BytesTrans: str
 
     @property
+    def room(self) -> str | None:
+        if "chatroom" not in self.StrTalker:
+            return None
+        return self.StrTalker
+
+    @property
     def talker_id(self) -> str:
         decoded_str = b64decode(self.BytesExtra)
         decoded_str = str(decoded_str)
