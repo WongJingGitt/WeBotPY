@@ -1,10 +1,20 @@
 from dataclasses import dataclass
 from os import environ
-from typing import Literal, List, Dict
+from typing import Literal, List, Dict, NewType
 
-from utils.write_doc import write_doc
+from utils.write_doc import write_doc, write_txt
 from wxhook import Bot
 from wxhook.model import Response
+
+ExportFileType = NewType("ExportFileType", str)
+
+
+class ExportFileTypeList:
+    JSON: ExportFileType = ExportFileType("json")
+    TXT: ExportFileType = ExportFileType("txt")
+    YAML: ExportFileType = ExportFileType("yaml")
+    YML: ExportFileType = ExportFileType("yml")
+    DOCX: ExportFileType = ExportFileType("docx")
 
 
 @dataclass
@@ -153,8 +163,28 @@ class WeBot(Bot):
         response = self.call_api('/api/getContactProfile', json={"wxid": wxid})
         return Response(**response)
 
-    def export_message_file(self, wxid, doc_filename='chat_record.docx', include_image=False):
-        write_doc(self.__get_msg_handle, wxid, doc_filename, include_image)
-        return doc_filename
+    def export_message_file(self, wxid, filename=None, include_image=False, start_time=None, end_time=None,
+                            export_type: ExportFileType = "json", endswith_txt: bool = True):
+        """
+        导出聊天记录到文件
+        :param wxid: 导出聊天记录的群聊或好友的wxid
+        :param filename: 导出的文件名称，选填
+        :param include_image: 是否包含图片，默认不包含
+        :param start_time: 开始时间
+        :param end_time: 结束时间
+        :param export_type: 文件格式，目前支持json、yaml和docx
+        :param endswith_txt: 在导出json和yaml时，是否在文件名用.txt后缀，因为大部分大预言模型不支持直接上传这两种文件
+        :return: 生成文件的绝对路径
+        """
+        if export_type == ExportFileTypeList.DOCX:
+            return write_doc(
+                self.__get_msg_handle, self.__get_micro_msg_handle,
+                wxid=wxid, include_image=include_image, doc_filename=filename,
+                port=self.remote_port, start_time=start_time, end_time=end_time
+            )
 
-
+        return write_txt(
+            self.__get_msg_handle, self.__get_micro_msg_handle,
+            wxid=wxid, filename=filename, start_time=start_time, end_time=end_time,
+            port=self.remote_port, endswith_txt=endswith_txt, file_type=export_type
+        )
