@@ -5,7 +5,7 @@ from re import sub
 
 from wxhook.model import Event, Response
 
-MessageTypes = NewType('MessageTypes', int)
+MessageTypes = NewType('MessageTypes', str)
 
 
 class MessageType:
@@ -14,46 +14,46 @@ class MessageType:
     """
 
     #: 通知消息事件
-    NOTICE_MESSAGE = MessageTypes(10000)
+    NOTICE_MESSAGE = MessageTypes("10000")
 
     #: 系统消息事件
-    SYSTEM_MESSAGE = MessageTypes(10002)
+    SYSTEM_MESSAGE = MessageTypes("10002")
 
     #: 全部消息事件
-    ALL_MESSAGE = MessageTypes(99999)
+    ALL_MESSAGE = MessageTypes("99999")
 
     #: 文本消息事件
-    TEXT_MESSAGE = MessageTypes(1)
+    TEXT_MESSAGE = MessageTypes("1")
 
     #: 图片消息事件
-    IMAGE_MESSAGE = MessageTypes(3)
+    IMAGE_MESSAGE = MessageTypes("3")
 
     #: 语音消息事件
-    VOICE_MESSAGE = MessageTypes(34)
+    VOICE_MESSAGE = MessageTypes("34")
 
     #: 好友验证请求消息事件
-    FRIEND_VERIFY_MESSAGE = MessageTypes(37)
+    FRIEND_VERIFY_MESSAGE = MessageTypes("37")
 
     #: 卡片消息事件
-    CARD_MESSAGE = MessageTypes(42)
+    CARD_MESSAGE = MessageTypes("42")
 
     #: 视频消息事件
-    VIDEO_MESSAGE = MessageTypes(43)
+    VIDEO_MESSAGE = MessageTypes("43")
 
     #: 表情消息事件
-    EMOJI_MESSAGE = MessageTypes(47)
+    EMOJI_MESSAGE = MessageTypes("47")
 
     #: 位置消息事件
-    LOCATION_MESSAGE = MessageTypes(48)
+    LOCATION_MESSAGE = MessageTypes("48")
 
     #: XML消息事件
-    XML_MESSAGE = MessageTypes(49)
+    XML_MESSAGE = MessageTypes("49")
 
     #: 视频/语音通话消息事件
-    VOIP_MESSAGE = MessageTypes(50)
+    VOIP_MESSAGE = MessageTypes("50")
 
     #: 手机端同步消息事件
-    PHONE_MESSAGE = MessageTypes(51)
+    PHONE_MESSAGE = MessageTypes("51")
 
 
 @dataclass
