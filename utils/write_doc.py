@@ -52,8 +52,6 @@ def get_all_message(db_handle, wxid, include_image, start_time=None, end_time=No
 
         time_condition += f" AND CreateTime <= {end_timestamp}"
 
-    print(time_condition)
-
     # 构建 SQL 查询语句
     body = {
         "dbHandle": db_handle,
@@ -217,6 +215,18 @@ def process_messages(msg_db_handle, micro_msg_db_handle, wxid, write_function: C
 
 def write_doc(msg_db_handle, micro_msg_db_handle, wxid, doc_filename=None, include_image=False,
               port=19001, start_time=None, end_time=None):
+    """
+    将聊天记录写入docx文件中
+    :param msg_db_handle:
+    :param micro_msg_db_handle:
+    :param wxid:
+    :param doc_filename:
+    :param include_image:
+    :param port:
+    :param start_time:
+    :param end_time:
+    :return:
+    """
     doc = Document()
 
     main_remark, main_username = get_talker_name(micro_msg_db_handle, wxid, port=port)
