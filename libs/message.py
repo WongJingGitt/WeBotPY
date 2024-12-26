@@ -225,6 +225,37 @@ class TextMessageFromDB:
     def content(self) -> str:
         return self.StrContent
 
+    @property
+    def data(self):
+        return {
+            "localId": self.localId,
+            "TalkerId": self.TalkerId,
+            "MsgSvrID": self.MsgSvrID,
+            "Type": self.Type,
+            "SubType": self.SubType,
+            "IsSender": self.IsSender,
+            "CreateTime": self.CreateTime,
+            "Sequence": self.Sequence,
+            "StatusEx": self.StatusEx,
+            "FlagEx": self.FlagEx,
+            "Status": self.Status,
+            "MsgServerSeq": self.MsgServerSeq,
+            "MsgSequence": self.MsgSequence,
+            "StrTalker": self.StrTalker,
+            "StrContent": self.StrContent,
+            "DisplayContent": self.DisplayContent,
+            "Reserved0": self.Reserved0,
+            "Reserved1": self.Reserved1,
+            "Reserved2": self.Reserved2,
+            "Reserved3": self.Reserved3,
+            "Reserved4": self.Reserved4,
+            "Reserved5": self.Reserved5,
+            "Reserved6": self.Reserved6,
+            "CompressContent": self.CompressContent,
+            "BytesExtra": self.BytesExtra,
+            "BytesTrans": self.BytesTrans
+        }
+
 
 if __name__ == '__main__':
     pass
