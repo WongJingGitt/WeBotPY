@@ -1,10 +1,15 @@
-from dataclasses import dataclass
+from json import loads
 from os import environ
+from pathlib import Path
 from typing import Literal, List, Dict, NewType
 
+from libs.contact import Contact
 from utils.write_doc import write_doc, write_txt
+from utils.contact_captor import contact_captor
+
 from wxhook import Bot
 from wxhook.model import Response
+from zhipuai import ZhipuAI
 
 ExportFileType = NewType("ExportFileType", str)
 
@@ -17,47 +22,6 @@ class ExportFileTypeList:
     DOCX: ExportFileType = ExportFileType("docx")
 
 
-@dataclass
-class Contact:
-    wxid: str  # id
-    custom_id: str  # 自定义的微信号
-    encrypt_username: str  # 用途为止
-    del_flag: str  # 看起来像是删除判定，待验证
-    type: str  # 类型，猜测是用来判断联系人类型 公众号、联系人、群聊之类的
-    verify_flag: str  # 验证类型？
-    reserved1: str
-    reserved2: str
-    reserved3: str
-    reserved4: str
-    remark: str  # 给好友的备注
-    name: str  # 好友自己取的微信名
-    label_id_list: str
-    domain_list: str
-    chat_room_type: str
-    py_initial: str
-    quan_pin: str
-    remark_py_initial: str
-    remark_quan_pin: str
-    big_head_img_url: str
-    small_head_img_url: str
-    head_img_md5: str
-    chat_room_notify: str
-    reserved5: str
-    reserved6: str
-    reserved7: str
-    extra_buf: str
-    reserved8: str
-    reserved9: str
-    reserved10: str
-    reserved11: str
-
-    def room(self):
-        return '@chatroom' in self.wxid
-
-    def openim(self):
-        return '@openim' in self.wxid
-
-
 class WeBot(Bot):
 
     def __init__(self, log_level="info", *args, **kwargs):
@@ -65,7 +29,7 @@ class WeBot(Bot):
         super().__init__(*args, **kwargs)
 
     @property
-    def __get_micro_msg_handle(self):
+    def get_micro_msg_handle(self):
         """
         获取MicroMsg数据库的句柄。
 
@@ -75,7 +39,7 @@ class WeBot(Bot):
         return micro_msg_database.get('handle')
 
     @property
-    def __get_msg_handle(self):
+    def get_msg_handle(self):
         """
         获取MSG0数据库的句柄。
 
@@ -98,7 +62,7 @@ class WeBot(Bot):
 
         :return: 返回包含所有联系人信息的列表，每个联系人是一个Contact对象。
         """
-        micro_msg_database_handle = self.__get_micro_msg_handle
+        micro_msg_database_handle = self.get_micro_msg_handle
         result = self.exec_sql(micro_msg_database_handle, 'SELECT * FROM Contact')
         return [Contact(*item) for item in result.data[1:]]
 
@@ -114,7 +78,7 @@ class WeBot(Bot):
         :return: 一个包含搜索结果的列表，没有结果则返回空列表。
         """
 
-        micro_msg_database_handle = self.__get_micro_msg_handle
+        micro_msg_database_handle = self.get_micro_msg_handle
         _mapping = {
             'wxid': "UserName",
             'remark': 'Remark',
@@ -142,7 +106,7 @@ class WeBot(Bot):
         :param text_only 仅获取文字消息
         :return:
         """
-        handel = self.__get_msg_handle
+        handel = self.get_msg_handle
 
         _type = "AND Type = \"1\"" if text_only else ""
         sql = f"SELECT * FROM MSG WHERE StrTalker = \"{talker_id}\" {_type} ORDER BY CreateTime ASC LIMIT {limit}"
@@ -178,13 +142,80 @@ class WeBot(Bot):
         """
         if export_type == ExportFileTypeList.DOCX:
             return write_doc(
-                self.__get_msg_handle, self.__get_micro_msg_handle,
+                self.get_msg_handle, self.get_micro_msg_handle,
                 wxid=wxid, include_image=include_image, doc_filename=filename,
                 port=self.remote_port, start_time=start_time, end_time=end_time
             )
 
         return write_txt(
-            self.__get_msg_handle, self.__get_micro_msg_handle,
+            self.get_msg_handle, self.get_micro_msg_handle,
             wxid=wxid, filename=filename, start_time=start_time, end_time=end_time,
             port=self.remote_port, endswith_txt=endswith_txt, file_type=export_type
         )
+
+    def get_concat_from_keyword(self, keywords: str, fuzzy: bool = False) -> List[Contact]:
+        """
+        通过关键字搜索联系人，返回符合条件的联系人列表
+
+        :param keywords: 搜索的关键字
+        :param fuzzy: 是否使用模糊搜索
+        :return: 返回符合条件的联系人列表
+        """
+        return contact_captor(keywords, self.get_micro_msg_handle, self.remote_port, fuzzy=fuzzy)
+
+    def get_message_summary(self, keywords: str, start_time: str = None, end_time: str = None, wxid: str = None) -> dict:
+        """
+        通过关键字搜索聊天记录，返回聊天记录的摘要
+
+        :param wxid:
+        :param keywords: 搜索的关键字
+        :param start_time: 开始时间
+        :param end_time: 结束时间
+        :return: 返回聊天记录的摘要
+        """
+        if not wxid:
+            contacts = self.get_concat_from_keyword(keywords)
+
+            if not contacts:
+                return {
+                    "type": "contact",
+                    "data": []
+                }
+
+            if len(contacts) > 1:
+                return {
+                    "type": "contact",
+                    "data": contacts
+                }
+
+            wxid = contacts[0].UserName
+
+        file_path = self.export_message_file(
+            wxid=wxid,
+            start_time=start_time,
+            end_time=end_time,
+            export_type=ExportFileTypeList.DOCX
+        )
+        apikey = environ.get('glm_apikey')
+
+        client = ZhipuAI(api_key=apikey)
+
+        file = client.files.create(
+            file=Path(file_path),
+            purpose="file-extract"
+        )
+        content = loads(client.files.content(file.id).content)
+
+        prompt = f"""
+            请你针对{content.get('content')}的内容进行分析，并遵循以下提示对用户的问题给出答复：
+            - 文档中数据说明部分表示了文档的主要数据格式;
+            - 文档中数据部分表示了文档的主要数据内容;
+            - 请你根据文档的数据格式和数据内容，深刻的理解聊天内容，并给出回答;
+        """
+
+        return {
+            "type": "prompt",
+            "data": prompt
+        }
+
+    # TODO 未完成, 逻辑有点混乱，这里用Function Tools调用时应该如何处理？
