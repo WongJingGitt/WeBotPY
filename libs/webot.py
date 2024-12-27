@@ -153,7 +153,7 @@ class WeBot(Bot):
             port=self.remote_port, endswith_txt=endswith_txt, file_type=export_type
         )
 
-    def get_concat_from_keyword(self, keywords: str, fuzzy: bool = False) -> list[dict]:
+    def get_concat_from_keyword(self, keywords: str, fuzzy: bool = False) -> dict[str, str | dict]:
         """
         通过关键字搜索联系人，返回符合条件的联系人列表
 
@@ -163,7 +163,8 @@ class WeBot(Bot):
         """
         return contact_captor(keywords, self.get_micro_msg_handle, self.remote_port, fuzzy=fuzzy)
 
-    def get_message_summary(self, keywords: str, start_time: str = None, end_time: str = None, wxid: str = None) -> dict:
+    def get_message_summary(self, keywords: str, start_time: str = None, end_time: str = None,
+                            wxid: str = None) -> dict:
         """
         通过关键字搜索聊天记录，返回聊天记录的摘要
 
@@ -177,25 +178,25 @@ class WeBot(Bot):
         if not wxid:
             contacts = self.get_concat_from_keyword(keywords)
 
-            if not contacts:
+            if contacts.get('type') == 'none':
                 return {
                     "type": "contact",
                     "data": []
                 }
 
-            if len(contacts) > 1:
+            if contacts.get('type') == 'multi':
                 return {
                     "type": "contact",
-                    "data": contacts
+                    "data": contacts.get('data')
                 }
 
-            wxid = contacts[0].get('wxid')
-
+            wxid = contacts.get('data')[0].get('wxid')
+        print(f"开始总结聊天记录, 开始时间: {start_time}, 结束时间: {end_time}, wxid: {wxid}")
         file_path = self.export_message_file(
             wxid=wxid,
             start_time=start_time,
             end_time=end_time,
-            export_type=ExportFileTypeList.DOCX
+            export_type=ExportFileTypeList.JSON
         )
         apikey = environ.get('glm_apikey')
 
