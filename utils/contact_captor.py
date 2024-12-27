@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from requests import post
 
 
-def contact_captor(keywords: str, micro_msg_db_handle: str, port: int, fuzzy: bool = False) -> list:
+def contact_captor(keywords: str, micro_msg_db_handle: str, port: int, fuzzy: bool = False) -> dict[str, str|dict]:
     """
     联系人捕获器，用于根据提供的条件捕获联系人。
 
@@ -29,14 +29,24 @@ def contact_captor(keywords: str, micro_msg_db_handle: str, port: int, fuzzy: bo
     }
     response = post(f'http://127.0.0.1:{port}/api/execSql', json=body).json()
     contact = response.get('data')
-    if not contact:
-        return []
 
-    if len(contact) > 1:
-        return [Contact(*item).data for index, item in enumerate(contact) if index > 0]
+    if not contact:
+        return {
+            "type": "none",
+            "data": []
+        }
+
+    if len(contact) > 2:
+        return {
+            "type": "multi",
+            "data": [Contact(*item).data for index, item in enumerate(contact) if index > 0]
+        }
 
     contact = Contact(*contact[1])
-    return [contact.data]
+    return {
+        "type": "single",
+        "data": [contact.data]
+    }
 
 
 
