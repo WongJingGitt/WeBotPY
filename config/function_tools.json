@@ -1,0 +1,59 @@
+[
+    {
+        "type": "function",
+        "function": {
+            "name": "contact_captor",
+            "description": "联系人捕获器，用于根据提供的条件捕获联系人。该函数会在联系人数据库中搜索指定关键字，支持模糊搜索，并通过机器人API获取匹配的联系人信息。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keywords": {
+                        "type": "string",
+                        "description": "在联系人的备注或昵称中搜索的关键词。"
+                    },
+                    "fuzzy": {
+                        "type": "boolean",
+                        "description": "如果为 True，则使用 LIKE 进行模糊搜索。默认为 False。"
+                    }
+                },
+                "required": [
+                    "keywords"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "message_summary",
+            "description": "通过联系人的关键字搜索聊天记录，返回聊天记录的摘要。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keywords": {
+                        "type": "string",
+                        "description": "搜索的联系人关键字。"
+                    },
+                    "start_time": {
+                        "type": "string",
+                        "description": "开始时间，格式为 YYYY-MM-DD HH:MM:SS。",
+                        "default": null
+                    },
+                    "end_time": {
+                        "type": "string",
+                        "description": "结束时间，格式为 YYYY-MM-DD HH:MM:SS。",
+                        "default": null
+                    },
+                    "wxid": {
+                        "type": "string",
+                        "description": "微信ID，如果不提供，将根据关键字搜索联系人。",
+                        "default": null
+                    }
+                },
+                "required": [
+                    "keywords"
+                ]
+            }
+        }
+    }
+]
