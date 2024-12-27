@@ -26,7 +26,7 @@
         "type": "function",
         "function": {
             "name": "message_summary",
-            "description": "通过联系人的关键字搜索聊天记录，返回聊天记录的摘要。",
+            "description": "通过联系人的关键字搜索聊天记录，返回聊天记录的摘要。注意：wxid不是微信号",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -46,12 +46,41 @@
                     },
                     "wxid": {
                         "type": "string",
-                        "description": "微信ID，如果不提供，将根据关键字搜索联系人。",
+                        "description": "wxid，如果不提供，将根据关键字搜索联系人。",
                         "default": null
                     }
                 },
                 "required": [
                     "keywords"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_text",
+            "description": "通过联系人关键字或者wxid发送文字消息，keywords和wxid虽然都是选填，但是两个参数必须至少传递一个。注意：wxid不是微信号",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keywords": {
+                        "type": "string",
+                        "description": "搜索的联系人关键字。",
+                        "default": null
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "需要发送的文字消息内容。"
+                    },
+                    "wxid": {
+                        "type": "string",
+                        "description": "wxid，如果不提供，将根据关键字搜索联系人。",
+                        "default": null
+                    }
+                },
+                "required": [
+                    "content"
                 ]
             }
         }
