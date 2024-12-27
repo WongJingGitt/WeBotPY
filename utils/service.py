@@ -1,20 +1,18 @@
 from datetime import datetime
 from json import loads
 from threading import Thread, Event
-from typing import Callable, Dict, List
-
-from libs.contact import Contact
 from utils.service_type import Response, Request
 from utils.toolkit import get_latest_wechat_version
 from libs.webot import WeBot
 from utils.chat_glm import chat_glm
-from utils.contact_captor import contact_captor
 
 from flask import Flask, request
+from flask_cors import CORS
 from requests import post as http_post
 
 event = Event()
 app = Flask(__name__)
+CORS(app)
 app.config['TIMEOUT'] = 300
 
 bot: dict[dict[WeBot, dict]] = {}
@@ -22,24 +20,31 @@ latest_bot: WeBot | None = None
 
 
 def get_bot(port) -> WeBot | None:
-    return bot.get(port).get('object')
+    return bot.get(port, {}).get('object')
 
 
 def get_function_tools(_bot: WeBot) -> dict:
     return {
-        "contact_captor": _bot.get_concat_from_keyword
+        "contact_captor": _bot.get_concat_from_keyword,
+        "message_summary": _bot.get_message_summary
     }
 
 
-def chat_with_glm(ask_message, _bot: WeBot, prompt: str = None, function_tools: list = None):
+def chat_with_glm(ask_message: list[dict], _bot: WeBot, prompt: str = None, function_tools: list = None):
     result = chat_glm(ask_message, prompt, function_tools)
     result = result.model_dump()
+
     if result.get('tool_calls') and len(result.get('tool_calls')) > 0:
         function_name = result.get('tool_calls')[0].get('function').get('name')
         function_args = result.get('tool_calls')[0].get('function').get('arguments')
         return_data = get_function_tools(_bot).get(function_name)(**loads(function_args))
-        return return_data
-    return result.get('message')
+        if function_name == 'message_summary' and return_data.get('type') == 'prompt':
+            ask_message.append({"role": "assistant", "content": f"好的，我获取到了下面这份聊天记录:\n{return_data.get('data')}\n需要总结吗？"})
+            ask_message.append({"role": "user", "content": "好的，请你深度总结一下这份聊天的内容"})
+            summary_result = chat_glm(ask_message, function_tools=function_tools, prompt=prompt).model_dump().get('content')
+            return summary_result
+        return return_data.get('data')
+    return result.get('content')
 
 
 def on_bot_start(b: WeBot):
@@ -74,6 +79,7 @@ def after_request(response):
 
 @app.route('/')
 def hello_world():
+    app.logger.debug('Hello, World!')
     response = Response(code=200, message='success', data="Hello, World!")
     return response.json
 
@@ -199,7 +205,7 @@ def ai_chat():
             ask_message=body.body.get('messages'),
             prompt=f"""
         你是一个微信机器人助手，你的职责如下：
-        - 今天是{datetime.now()}。
+        - 今天是{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}。
         - 总结用户的聊天内容，并给出回答；
         - 分析用户的需求，按需调用tools函数；
         """,
