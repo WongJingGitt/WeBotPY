@@ -49,7 +49,7 @@ class Request:
     def check_body(self):
         if self.body_keys:
             for item in self.body_keys:
-                if item not in self.body:
+                if item not in self.body or not self.body.get(item):
                     return False
         return True
 
