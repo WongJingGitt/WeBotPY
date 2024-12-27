@@ -153,7 +153,7 @@ class WeBot(Bot):
             port=self.remote_port, endswith_txt=endswith_txt, file_type=export_type
         )
 
-    def get_concat_from_keyword(self, keywords: str, fuzzy: bool = False) -> List[Contact]:
+    def get_concat_from_keyword(self, keywords: str, fuzzy: bool = False) -> list[dict]:
         """
         通过关键字搜索联系人，返回符合条件的联系人列表
 
@@ -173,6 +173,7 @@ class WeBot(Bot):
         :param end_time: 结束时间
         :return: 返回聊天记录的摘要
         """
+
         if not wxid:
             contacts = self.get_concat_from_keyword(keywords)
 
@@ -188,7 +189,7 @@ class WeBot(Bot):
                     "data": contacts
                 }
 
-            wxid = contacts[0].UserName
+            wxid = contacts[0].get('wxid')
 
         file_path = self.export_message_file(
             wxid=wxid,
@@ -217,5 +218,3 @@ class WeBot(Bot):
             "type": "prompt",
             "data": prompt
         }
-
-    # TODO 未完成, 逻辑有点混乱，这里用Function Tools调用时应该如何处理？
