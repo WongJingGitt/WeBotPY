@@ -7,15 +7,12 @@ import yaml
 
 from libs.message import TextMessageFromDB, MessageType
 from utils.msg_pb2 import MessageBytesExtra
+from utils.toolkit import DATA_PATH
 
 from requests import post
 from docx import Document
 from docx.shared import Pt
 import xmltodict
-
-UTILS_PATH = path.dirname(path.abspath(__file__))
-ROOT_PATH = path.dirname(UTILS_PATH)
-DATA_PATH = path.join(ROOT_PATH, 'data')
 
 
 def get_all_message(db_handle, wxid, include_image, start_time=None, end_time=None, port=19001):
@@ -56,7 +53,7 @@ def get_all_message(db_handle, wxid, include_image, start_time=None, end_time=No
     body = {
         "dbHandle": db_handle,
         "sql": f"SELECT * FROM MSG WHERE StrTalker = \"{wxid}\" AND Type in ({message_type}){time_condition} ORDER BY "
-               f"CreateTime DESC",
+               f"CreateTime ASC",
     }
 
     return (post(f'http://127.0.0.1:{port}/api/execSql', json=body).json()).get('data')
@@ -106,7 +103,7 @@ def decode_img(message: TextMessageFromDB, save_dir, port=19001) -> str:
     if message.Type != '3':
         return ""
 
-    DATA_PATH = post(f'http://127.0.0.1:{port}/api/userInfo').json().get('data').get('dataSavePath')
+    user_data_path = post(f'http://127.0.0.1:{port}/api/userInfo').json().get('data').get('dataSavePath')
 
     message_id = message.MsgSvrID
 
@@ -129,7 +126,7 @@ def decode_img(message: TextMessageFromDB, save_dir, port=19001) -> str:
     image_path = path.join(sep.join(dir_path.split(sep)[1:]), filename)
 
     body = {
-        'filePath': path.join(DATA_PATH, image_path),
+        'filePath': path.join(user_data_path, image_path),
         'storeDir': save_dir
     }
     resp = post(f'http://127.0.0.1:{port}/api/decodeImage', json=body)
@@ -178,6 +175,15 @@ def process_messages(msg_db_handle, micro_msg_db_handle, wxid, write_function: C
     data = get_all_message(msg_db_handle, wxid, include_image, port=port, start_time=start_time, end_time=end_time)
 
     user_info = post(f'http://127.0.0.1:{port}/api/userInfo').json().get('data')
+
+    if not path.exists(DATA_PATH):
+        from os import makedirs
+        makedirs(DATA_PATH)
+
+    exports_path = path.join(DATA_PATH, 'exports')
+    if not path.exists(exports_path):
+        from os import makedirs
+        makedirs(exports_path)
 
     for index, item in enumerate(data):
         if index == 0:
@@ -329,7 +335,7 @@ def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
             "time": _format_time,
         }
         if _room: item['mentioned'] = _mention_list
-        result['data'].insert(0, item)
+        result['data'].append(item)
 
     process_messages(
         msg_db_handle=msg_db_handle,
@@ -360,5 +366,3 @@ def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
             fa.write('\n')
             fa.write(yaml.dump({"data": result.get('data')}, allow_unicode=True))
         return file_path
-
-
