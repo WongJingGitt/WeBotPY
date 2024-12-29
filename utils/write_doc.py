@@ -7,7 +7,7 @@ import yaml
 
 from libs.message import TextMessageFromDB, MessageType
 from utils.msg_pb2 import MessageBytesExtra
-from utils.toolkit import DATA_PATH
+from utils.project_path import DATA_PATH
 
 from requests import post
 from docx import Document
