@@ -85,6 +85,8 @@ def chat_with_function_tools(ask_message: list[dict], _bot: WeBot, prompt: str =
             #  现在的问题是，加了这两行对话历史，不会返回给前端，用完就没了。后续的上下文中无法读取到这段聊天记录。
             #  目前的计划是，完整的上下文，包括这两条存到数据库，然后加一个字段判断是否应该展示在前端。
             #  每次前端请求对话时以完整的上下文发送请求，但是前端获取展示时过滤掉这两条。
+            #  得考虑上下文中聊天记录的存储方式，如果直接存储在上下文字段中，存在表里会不会太长了？最大可能会出现十几兆的数据？
+            #  或者可以考虑存储参数到一个新的字段，例如这条对话涉及到了什么参数，然后前端请求时再根据参数重新获取对应的聊天记录。
             summary_result = chat_glm(ask_message, function_tools=function_tools, prompt=prompt).model_dump().get(
                 'content')
             return summary_result
