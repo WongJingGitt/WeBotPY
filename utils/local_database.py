@@ -1,7 +1,7 @@
 # TODO:
 #  需要完善会话记录和消息记录的储存
 
-from os import path
+from os import path, mkdir
 
 from project_path import DATA_PATH
 
@@ -12,6 +12,8 @@ class LocalDatabase:
 
     def __init__(self, db_name: str, db_path: str = path.join(DATA_PATH, 'databases')):
         self._db_path = db_path
+        if not path.exists(db_path):
+            mkdir(db_path)
         db_name = db_name if db_name.endswith(".db") else f"{db_name}.db"
         self._db_connection = connect(path.join(db_path, db_name))
 
