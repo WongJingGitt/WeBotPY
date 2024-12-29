@@ -1,7 +1,9 @@
-from datetime import datetime
 from os import environ
 from pathlib import Path
 from json import loads
+
+from libs.webot import WeBot
+from utils.toolkit import get_function_tools
 
 from zhipuai import ZhipuAI
 
@@ -58,4 +60,33 @@ def chat_with_file(file_path):
     return response.choices[0].message
 
 
+def chat_with_function_tools(ask_message: list[dict], _bot: WeBot, prompt: str = None, function_tools: list = None):
+    """
+    使用glm-4-flash模型，结合函数工具进行聊天
 
+    :param ask_message: 聊天内容，需要传入完整的对话上下文
+    :param _bot: WeBot对象
+    :param prompt: 对机器人的人设。
+    :param function_tools: 工具函数
+    :return: 返回字符串。如果是工具函数返回的内容，在工具函数内需要返回一个字典，并且把需要给前端的消息字符串放在"data"字段。
+    """
+
+    result = chat_glm(ask_message, prompt, function_tools)
+    result = result.model_dump()
+    if result.get('tool_calls') and len(result.get('tool_calls')) > 0:
+        function_name = result.get('tool_calls')[0].get('function').get('name')
+        function_args = result.get('tool_calls')[0].get('function').get('arguments')
+        return_data = get_function_tools(_bot).get(function_name)(**loads(function_args))
+        if function_name == 'message_summary' and return_data.get('type') == 'prompt':
+            ask_message.append({"role": "assistant",
+                                "content": f"好的，我获取到了下面这份聊天记录:  \n  {return_data.get('data')}  \n  你需要的是这个吗？"})
+            ask_message.append({"role": "user", "content": "是的，没错。"})
+            # TODO：
+            #  现在的问题是，加了这两行对话历史，不会返回给前端，用完就没了。后续的上下文中无法读取到这段聊天记录。
+            #  目前的计划是，完整的上下文，包括这两条存到数据库，然后加一个字段判断是否应该展示在前端。
+            #  每次前端请求对话时以完整的上下文发送请求，但是前端获取展示时过滤掉这两条。
+            summary_result = chat_glm(ask_message, function_tools=function_tools, prompt=prompt).model_dump().get(
+                'content')
+            return summary_result
+        return return_data.get('data')
+    return result.get('content')
