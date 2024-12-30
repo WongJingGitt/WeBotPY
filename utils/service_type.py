@@ -1,10 +1,9 @@
-from dataclasses import dataclass
-from typing import Any, Dict, Callable
+from dataclasses import dataclass, field
+from typing import Any, Dict, Callable, Literal
 
 
 @dataclass
 class Response:
-
     code: int
     data: Any
     message: str
@@ -39,7 +38,6 @@ class Response:
 
 @dataclass
 class Request:
-
     body: dict = None
     body_keys: list = None
     query: dict = None
@@ -53,3 +51,23 @@ class Request:
                     return False
         return True
 
+
+@dataclass
+class Router:
+    rule: str
+    endpoint: str | None = None
+    view_func: Callable or None = None
+    provide_automatic_options: bool | None = None
+    methods: Literal['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] | None = 'GET'
+    options: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def json(self) -> Dict:
+        return {
+            "rule": self.rule,
+            "endpoint": self.endpoint,
+            "view_func": self.view_func,
+            "provide_automatic_options": self.provide_automatic_options,
+            "methods": self.methods,
+            **self.options
+        }
