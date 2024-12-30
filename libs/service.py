@@ -15,16 +15,14 @@ from utils.bot_storage import BotStorage
 from utils.local_database import ConversationsDatabase
 
 from flask import Flask, request, has_request_context
-from flask.scaffold import T_after_request
 from flask_cors import CORS
 from requests import post as http_post
 
 
-class Service(Flask):
+class ServiceMain(Flask):
     # TODO:
-    #   考虑优化服务类结构，把具体代码逻辑与接口定义分离，增加Collectr类分类不同的接口合集。
-    #   Router类：封装路由注册，可以是一个简单的dataclass
-    #   Collectr类：一组路由集合，接收一个path字符串，传入一组Router，以path为路径注册到根路由上
+    #   bot实例几乎在整个上下文都需要用到，解耦难度大。得考虑怎么优化。
+    #   目前想法是设计一个单例模式的BotStorage，通过单例模式全局存储bot实例解耦这些逻辑到不同的脚本。
 
     """
     后端服务类，用作处理自定义逻辑，在WXHOOK原生请求之外加一层服务来实现一些自定义逻辑。
@@ -38,7 +36,7 @@ class Service(Flask):
         self._latest_bot: WeBot | None = None
         self._event = Event()
 
-    def after_request(self, f: T_after_request) -> T_after_request:
+    def after_request(self, f):
         """
         覆写after_request方法，执行了一些回收工作。
         - 在请求结束后，如果请求是start，则将_latest_bot设置为None，清理变量为下次多开微信做准备。
@@ -236,7 +234,12 @@ class Service(Flask):
             self.add_url_rule(**route)
         self.run(port=port, *args, **kwargs)
 
+    def run(self, port: int = 16001, *args, **kwargs):
+        for route in self._route_map():
+            self.add_url_rule(**route)
+        super().run(port=port, *args, **kwargs)
+
 
 if __name__ == '__main__':
-    app = Service()
-    app.start()
+    app = ServiceMain()
+    app.run()
