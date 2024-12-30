@@ -209,12 +209,12 @@ class WeBot(Bot):
         content = loads(client.files.content(file.id).content)
 
         prompt = f"""
-            请你针对{content.get('content')}的内容进行分析，并遵循以下提示对用户的问题给出答复：
+            请你针对\"\"\"{content.get('content')}\"\"\"的内容进行分析，并遵循以下提示对用户的问题给出答复：
             - 文档中数据说明部分表示了文档的主要数据格式;
             - 文档中数据部分表示了文档的主要数据内容;
             - 请你根据文档的数据格式和数据内容，深刻的理解聊天内容，并给出回答;
         """
-
+        client.files.delete(file.id)
         return {
             "type": "prompt",
             "data": prompt
