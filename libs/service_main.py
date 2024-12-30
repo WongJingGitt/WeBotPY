@@ -12,6 +12,7 @@ from utils.toolkit import get_latest_wechat_version
 from libs.webot import WeBot
 from utils.chat_glm import chat_with_function_tools as chat_with_glm
 from utils.bot_storage import BotStorage
+from libs.service_conversations import ServiceConversations
 from utils.local_database import ConversationsDatabase
 
 from flask import Flask, request, has_request_context
@@ -32,9 +33,10 @@ class ServiceMain(Flask):
         super().__init__(*args, **kwargs, import_name=__name__)
         self.config['TIMEOUT'] = 300
         CORS(self)
-        self._bot: dict[str | int, dict[str, dict[str, str] | WeBot]] = BotStorage()
+        self._bot: BotStorage = BotStorage()
         self._latest_bot: WeBot | None = None
         self._event = Event()
+        self._conversions_database = ConversationsDatabase()
 
     def after_request(self, f):
         """
@@ -56,12 +58,12 @@ class ServiceMain(Flask):
         :param _bot:
         :return:
         """
-        self._bot.setdefault(_bot.remote_port, {"object": _bot})
+        self._bot.set_bot(_bot.remote_port, bot=_bot)
         self._latest_bot = _bot
         self._event.set()
 
     def _on_bot_login(self, _bot: WeBot, _event):
-        self._bot[_bot.remote_port] = {"object": _bot, "info": asdict(_bot.info)}
+        self._bot.set_bot(_bot.remote_port, bot=_bot, info=asdict(_bot.info))
 
     def _hello_world(self):
         response = Response(code=200, message='success', data="Hello, World!")
@@ -90,7 +92,7 @@ class ServiceMain(Flask):
 
     def _bot_list(self):
         response = Response(code=200, message='success',
-                            data=[{"port": port, "info": data.get('info')} for port, data in self._bot.items()])
+                            data=[{"port": port, "info": data.get('info')} for port, data in self._bot.bots.items()])
         return response.json
 
     def _login_heartbeat(self):
@@ -112,7 +114,7 @@ class ServiceMain(Flask):
         if login_status.get('code') == 0:
             response.data = {"status": False}
             return response.json
-        info = self._bot.get(body.body.get('port')).get('info')
+        info = self._bot.get_bot(body.body.get('port')).get('info')
         response.data = {"status": True, "info": info}
         return response.json
 
@@ -185,6 +187,26 @@ class ServiceMain(Flask):
             today = datetime.now().strftime("%Y-%m-%d")
             time_now = datetime.now().strftime("%H:%M:%S")
             week_day = datetime.now().strftime("%A")
+
+            conversation_id = body.body.get('conversation_id')
+
+            if not conversation_id:
+                conversation_id = self._conversions_database.add_conversation(
+                    user_id=_bot_info.get('wxid'),
+                    start_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    summary=f"新对话 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+            conversation_id = int(conversation_id)
+            self._conversions_database.add_message(
+                conversation_id=conversation_id,
+                role="user",
+                content=body.body.get('messages')[-1].get('content'),
+                timestamp=datetime.fromtimestamp(body.body.get('messages')[-1].get('createAt') / 1000).strftime("%Y-%m-%d %H:%M:%S"),
+                visible=1,
+                wechat_message_config=None,
+                message_id=body.body.get('messages')[-1].get('id')
+            )
+
             result = chat_with_glm(
                 ask_message=body.body.get('messages'),
                 prompt=f"""
@@ -196,9 +218,21 @@ class ServiceMain(Flask):
             - 当涉及到转发内容时，请你务必转发原文，不要篡改任何内容；
             """,
                 function_tools=tools,
-                _bot=_bot_object
+                _bot=_bot_object,
+                conversation_id=conversation_id
             )
             response.data = result
+
+            self._conversions_database.add_message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=result,
+                timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                visible=1,
+                wechat_message_config=None,
+                message_id=body.body.get('assistant_id')
+            )
+
             return response.json
 
         except Exception as e:
@@ -207,14 +241,7 @@ class ServiceMain(Flask):
             traceback.print_exc()
             return response.json
 
-    def _conversations_list(self):
-        body = Request(body=request.json, body_keys=['port'])
-        response = Response(code=200, message='success', data=None)
-        _bot = self._bot.get_bot(body.body.get('port'))
-        _conversations = ConversationsDatabase().get_conversation_by_user(_bot.get('info').get('wxid'))
-        response.data = _conversations
-        return response.json
-
+    @property
     def _route_map(self) -> List[Dict[str, Callable | str]]:
         return [
             {"rule": '/', "endpoint": "hello_world", "methods": ['GET'], "view_func": self._hello_world},
@@ -224,14 +251,13 @@ class ServiceMain(Flask):
              "view_func": self._login_heartbeat},
             {"rule": "/api/bot/export_message_file", "endpoint": "export_message_file", "methods": ['POST'],
              "view_func": self._export_message_file},
-            {"rule": "/api/ai/chat", "endpoint": "ai_chat", "methods": ['POST'], "view_func": self._ai_chat},
-            {"rule": "/api/ai/conversation/list", "endpoint": "conversations_list", "methods": ['POST']
-                , "view_func": self._conversations_list}
+            {"rule": "/api/ai/chat", "endpoint": "ai_chat", "methods": ['POST'], "view_func": self._ai_chat}
         ]
 
     def run(self, port: int = 16001, *args, **kwargs):
-        for route in self._route_map():
+        for route in self._route_map:
             self.add_url_rule(**route)
+        self.register_blueprint(ServiceConversations())
         super().run(port=port, *args, **kwargs)
 
 
