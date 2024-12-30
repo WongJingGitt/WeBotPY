@@ -229,11 +229,6 @@ class ServiceMain(Flask):
                 , "view_func": self._conversations_list}
         ]
 
-    def start(self, port: int = 16001, *args, **kwargs):
-        for route in self._route_map():
-            self.add_url_rule(**route)
-        self.run(port=port, *args, **kwargs)
-
     def run(self, port: int = 16001, *args, **kwargs):
         for route in self._route_map():
             self.add_url_rule(**route)
