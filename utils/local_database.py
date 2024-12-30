@@ -3,7 +3,7 @@
 
 from os import path, mkdir
 
-from project_path import DATA_PATH
+from utils.project_path import DATA_PATH
 
 from sqlite3 import connect
 
