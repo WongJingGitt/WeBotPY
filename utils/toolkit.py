@@ -32,8 +32,6 @@ def get_latest_wechat_version() -> Optional[str]:
 
 
 def generate_multi_contact_text(contacts: dict[str, dict | list]) -> str:
-    print(contacts)
-
     if type(contacts.get('data')) == 'dict':
         contacts['data'] = [contacts.get('data')]
     result = f"找到了**{len(contacts.get('data'))}**个联系人：  \n\n   "
@@ -52,6 +50,12 @@ def get_function_tools(_bot: WeBot) -> dict:
             return {"data": "没有找到这个联系人，请确认关键字是否正确。"}
 
         return {"data": generate_multi_contact_text(contacts)}
+
+    def get_message_summary(*args, **kwargs) -> dict:
+        result = _bot.get_message_summary(*args, **kwargs)
+        if result.get('type') == 'contact':
+            return {"data": "没有找到这个联系人，请确认关键字是否正确。"} if len(result.get('data')) == 0 else {"data": generate_multi_contact_text(result)}
+        return {"data": result.get('data')}
 
     def send_text(content: str, keywords: str = None, wxid: str = None):
         if wxid:
@@ -72,6 +76,6 @@ def get_function_tools(_bot: WeBot) -> dict:
 
     return {
         "contact_captor": get_contact_text,
-        "message_summary": _bot.get_message_summary,
+        "message_summary": get_message_summary,
         "send_text": send_text
     }
