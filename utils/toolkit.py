@@ -55,7 +55,7 @@ def get_function_tools(_bot: WeBot) -> dict:
         result = _bot.get_message_summary(*args, **kwargs)
         if result.get('type') == 'contact':
             return {"data": "没有找到这个联系人，请确认关键字是否正确。"} if len(result.get('data')) == 0 else {"data": generate_multi_contact_text(result)}
-        return {"data": result.get('data')}
+        return result
 
     def send_text(content: str, keywords: str = None, wxid: str = None):
         if wxid:

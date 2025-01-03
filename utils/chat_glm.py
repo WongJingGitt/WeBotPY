@@ -30,7 +30,7 @@ def chat_glm(ask_message, prompt: str = None, function_tools: list = None):
         model="glm-4-flash",
         messages=[*msg, *ask_message],
         temperature=0.1,
-        tools=function_tools or {}
+        tools=function_tools
     )
 
     return resp.choices[0].message
@@ -63,7 +63,8 @@ def chat_with_file(file_path):
     return response.choices[0].message
 
 
-def chat_with_function_tools(ask_message: list[dict], _bot: WeBot, prompt: str = None, function_tools: list = None, conversation_id: int = None):
+def chat_with_function_tools(ask_message: list[dict], _bot: WeBot, prompt: str = None, function_tools: list = None,
+                             conversation_id: int = None):
     """
     使用glm-4-flash模型，结合函数工具进行聊天
 
@@ -71,7 +72,7 @@ def chat_with_function_tools(ask_message: list[dict], _bot: WeBot, prompt: str =
     :param _bot: WeBot对象
     :param prompt: 对机器人的人设。
     :param function_tools: 工具函数
-    :param conversation_id:
+    :param conversation_id: 数据库的对话ID，用来记录当前消息属于哪个对话。
     :return: 返回字符串。如果是工具函数返回的内容，在工具函数内需要返回一个字典，并且把需要给前端的消息字符串放在"data"字段。
     """
 
@@ -83,20 +84,20 @@ def chat_with_function_tools(ask_message: list[dict], _bot: WeBot, prompt: str =
         return_data = get_function_tools(_bot).get(function_name)(**loads(function_args))
         if function_name == 'message_summary' and return_data.get('type') == 'prompt':
             cdb = ConversationsDatabase()
+            # TODO:
+            #   聊天记录太长的话会截断上下文，读不到最初的问题了，需要考虑优化，分块总结？
             ask_message.append({"role": "assistant",
                                 "content": f"好的，我获取到了下面这份聊天记录:  \n  {return_data.get('data')}  \n  你需要的是这个吗？"})
             ask_message.append({"role": "user", "content": "是的，没错。"})
 
-            cdb.add_message(conversation_id, "assistant", "好的，我获取到了下面这份聊天记录:  \n  {{聊天记录}}  \n  你需要的是这个吗？", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 0, json.dumps({"function_name": function_name, "function_args": function_args}) )
+            cdb.add_message(conversation_id, "assistant",
+                            "好的，我获取到了下面这份聊天记录:  \n  {{聊天记录}}  \n  你需要的是这个吗？",
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 0,
+                            json.dumps({"function_name": function_name, "function_args": function_args}))
             cdb.add_message(conversation_id, "user", "是的，没错。", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 0)
-            # TODO：
-            #  有bug，总结的时候会直接吧聊天记录返回来，不会总结
 
             summary_result = chat_glm(ask_message, function_tools=function_tools, prompt=prompt).model_dump().get(
                 'content')
-            print(summary_result)
             return summary_result
         return return_data.get('data')
     return result.get('content')
-
-
