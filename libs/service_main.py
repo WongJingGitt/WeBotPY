@@ -83,8 +83,7 @@ class ServiceMain(Flask):
             )
             _bot.run()
 
-        t = Thread(target=run_bot)
-        t.daemon = True
+        t = Thread(target=run_bot, daemon=True)
         t.start()
         self._event.wait()
         response = Response(code=200, message='success', data={"port": self._latest_bot.remote_port})
@@ -190,12 +189,20 @@ class ServiceMain(Flask):
 
             conversation_id = body.body.get('conversation_id')
 
+            summary = None
+            start_time = None
+            new_conversation = False
+
             if not conversation_id:
+                start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                summary = f"新对话 {start_time}"
                 conversation_id = self._conversions_database.add_conversation(
                     user_id=_bot_info.get('wxid'),
-                    start_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    summary=f"新对话 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    start_time=start_time,
+                    summary=summary
                 )
+                new_conversation = True
+
             conversation_id = int(conversation_id)
             self._conversions_database.add_message(
                 conversation_id=conversation_id,
@@ -204,7 +211,7 @@ class ServiceMain(Flask):
                 timestamp=datetime.fromtimestamp(body.body.get('messages')[-1].get('createAt') / 1000).strftime("%Y-%m-%d %H:%M:%S"),
                 visible=1,
                 wechat_message_config=None,
-                message_id=body.body.get('messages')[-1].get('id')
+                message_id=body.body.get('messages')[-1].get('message_id')
             )
 
             result = chat_with_glm(
@@ -215,13 +222,20 @@ class ServiceMain(Flask):
             - 用户的名字是`{_bot_info.get('name')}`，所以聊天记录中的`{_bot_info.get('name')}`是用户自己。
             - 总结用户的聊天内容，并给出回答；
             - 分析用户的需求，按需调用tools函数；
-            - 当涉及到转发内容时，请你务必转发原文，不要篡改任何内容；
+            - 当涉及到转发内容时，请先判断用户是否有指定原文，如果有原文：请你务必转发原文，不要篡改任何内容；
             """,
                 function_tools=tools,
                 _bot=_bot_object,
                 conversation_id=conversation_id
             )
-            response.data = result
+
+            response.data = {
+                "message": result,
+                "conversation_id": conversation_id,
+                "new_conversation": new_conversation,
+                "start_time": start_time,
+                "summary": summary
+            }
 
             self._conversions_database.add_message(
                 conversation_id=conversation_id,
