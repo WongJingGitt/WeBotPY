@@ -6,7 +6,7 @@ from os import path
 from typing import List, Dict, Callable
 from dataclasses import asdict
 
-from utils.project_path import CONFIG_PATH
+from utils.project_path import CONFIG_PATH, ROOT_PATH
 from utils.service_type import Response, Request
 from utils.toolkit import get_latest_wechat_version
 from libs.webot import WeBot
@@ -15,22 +15,19 @@ from utils.bot_storage import BotStorage
 from libs.service_conversations import ServiceConversations
 from utils.local_database import ConversationsDatabase
 
-from flask import Flask, request, has_request_context
+from flask import Flask, request, has_request_context, send_file
 from flask_cors import CORS
 from requests import post as http_post
 
 
 class ServiceMain(Flask):
-    # TODO:
-    #   bot实例几乎在整个上下文都需要用到，解耦难度大。得考虑怎么优化。
-    #   目前想法是设计一个单例模式的BotStorage，通过单例模式全局存储bot实例解耦这些逻辑到不同的脚本。
 
     """
     后端服务类，用作处理自定义逻辑，在WXHOOK原生请求之外加一层服务来实现一些自定义逻辑。
     """
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, import_name=__name__)
+        super().__init__(*args, **kwargs, import_name=__name__, static_url_path="/", static_folder=path.join(ROOT_PATH, 'static'))
         self.config['TIMEOUT'] = 300
         CORS(self)
         self._bot: BotStorage = BotStorage()
@@ -66,8 +63,8 @@ class ServiceMain(Flask):
         self._bot.set_bot(_bot.remote_port, bot=_bot, info=asdict(_bot.info))
 
     def _hello_world(self):
-        response = Response(code=200, message='success', data="Hello, World!")
-        return response.json
+        # response = Response(code=200, message='success', data="Hello, World!")
+        return send_file(path.join(ROOT_PATH, 'static', 'index.html'))
 
     def _start_bot(self):
         body = request.json
