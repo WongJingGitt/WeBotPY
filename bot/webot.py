@@ -3,9 +3,9 @@ from os import environ
 from pathlib import Path
 from typing import Literal, List, Dict, NewType
 
-from libs.contact import Contact
-from utils.write_doc import write_doc, write_txt
-from utils.contact_captor import contact_captor
+from bot.contact import Contact
+from bot.write_doc import write_doc, write_txt
+from bot.contact_captor import contact_captor
 
 from wxhook import Bot
 from wxhook.model import Response
@@ -115,7 +115,7 @@ class WeBot(Bot):
 
         return result.data[1:]
 
-    def get_concat_profile(self, wxid: str) -> Response:
+    def get_contact_profile(self, wxid: str) -> Response:
         """
         获取群成员基础信息，传入wxid
 
@@ -153,7 +153,7 @@ class WeBot(Bot):
             port=self.remote_port, endswith_txt=endswith_txt, file_type=export_type
         )
 
-    def get_concat_from_keyword(self, keywords: str, fuzzy: bool = False) -> dict[str, str | dict]:
+    def get_contact_by_keyword(self, keywords: str, fuzzy: bool = False) -> dict[str, str | dict]:
         """
         通过关键字搜索联系人，返回符合条件的联系人列表
 
@@ -176,7 +176,7 @@ class WeBot(Bot):
         """
 
         if not wxid:
-            contacts = self.get_concat_from_keyword(keywords)
+            contacts = self.get_contact_by_keyword(keywords)
 
             if contacts.get('type') == 'none':
                 return {

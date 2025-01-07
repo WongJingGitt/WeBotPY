@@ -7,13 +7,13 @@ from typing import List, Dict, Callable
 from dataclasses import asdict
 
 from utils.project_path import CONFIG_PATH, ROOT_PATH
-from utils.service_type import Response, Request
+from services.service_type import Response, Request
 from utils.toolkit import get_latest_wechat_version
-from libs.webot import WeBot
+from bot.webot import WeBot
 from utils.chat_glm import chat_with_function_tools as chat_with_glm
-from utils.bot_storage import BotStorage
-from libs.service_conversations import ServiceConversations
-from utils.local_database import ConversationsDatabase
+from bot.bot_storage import BotStorage
+from services.service_conversations import ServiceConversations
+from databases.conversation_database import ConversationsDatabase
 
 from flask import Flask, request, has_request_context, send_file
 from flask_cors import CORS

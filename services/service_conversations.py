@@ -1,6 +1,6 @@
-from utils.service_type import Response, Request
-from utils.local_database import ConversationsDatabase
-from utils.bot_storage import BotStorage, BotItem
+from services.service_type import Response, Request
+from databases.conversation_database import ConversationsDatabase
+from bot.bot_storage import BotStorage
 
 from flask import Blueprint, request
 

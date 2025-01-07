@@ -5,7 +5,7 @@ from os import path, sep, rename
 from typing import Callable
 import yaml
 
-from libs.message import TextMessageFromDB, MessageType
+from bot.message import TextMessageFromDB, MessageType
 from utils.msg_pb2 import MessageBytesExtra
 from utils.project_path import DATA_PATH
 

@@ -1,7 +1,7 @@
 from typing import Dict
 from dataclasses import dataclass
 
-from libs.webot import WeBot
+from bot.webot import WeBot
 
 
 @dataclass

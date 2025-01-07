@@ -1,4 +1,4 @@
-from libs.webot import WeBot
+from bot.webot import WeBot
 
 import requests
 from bs4 import BeautifulSoup
@@ -44,7 +44,7 @@ def generate_multi_contact_text(contacts: dict[str, dict | list]) -> str:
 
 def get_function_tools(_bot: WeBot) -> dict:
     def get_contact_text(*args, **kwargs):
-        contacts = _bot.get_concat_from_keyword(*args, **kwargs)
+        contacts = _bot.get_contact_by_keyword(*args, **kwargs)
 
         if contacts.get('type') == 'none':
             return {"data": "没有找到这个联系人，请确认关键字是否正确。"}
@@ -62,7 +62,7 @@ def get_function_tools(_bot: WeBot) -> dict:
             _bot.send_text(wxid=wxid, msg=content)
             return {"data": "发送成功"}
 
-        contacts = _bot.get_concat_from_keyword(keywords)
+        contacts = _bot.get_contact_by_keyword(keywords)
         if contacts.get('type') == 'none':
             return {"data": "没有找到这个联系人，请确认关键字是否正确。"}
 

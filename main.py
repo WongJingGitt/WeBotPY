@@ -1,4 +1,4 @@
-from libs.service_main import ServiceMain
+from services.service_main import ServiceMain
 from argparse import ArgumentParser
 
 

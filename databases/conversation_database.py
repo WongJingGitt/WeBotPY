@@ -1,54 +1,6 @@
-from threading import Lock
-from queue import Queue
-from os import path, mkdir
 from uuid import uuid4
-import sqlite3
-import logging
 
-from utils.project_path import DATA_PATH
-
-# 设置日志记录
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-
-class LocalDatabase:
-    def __init__(self, db_name: str, db_path: str = path.join(DATA_PATH, 'databases')):
-        self._db_path = db_path
-        if not path.exists(db_path):
-            mkdir(db_path)
-        self._db_name = db_name if db_name.endswith(".db") else f"{db_name}.db"
-        self._pool = Queue(maxsize=50)  # 设置连接池大小
-        self._lock = Lock()
-        for _ in range(self._pool.maxsize):
-            self._pool.put(self._create_connection())
-
-    def _create_connection(self) -> sqlite3.Connection:
-        return sqlite3.connect(path.join(self._db_path, self._db_name), check_same_thread=False)
-
-    @property
-    def connection(self) -> sqlite3.Connection:
-        with self._lock:
-            return self._pool.get()
-
-    def release_connection(self, conn: sqlite3.Connection):
-        with self._lock:
-            self._pool.put(conn)
-
-    def execute_query(self, query: str, params: tuple = None, commit: bool = False) -> sqlite3.Cursor:
-        conn = self.connection
-        cursor = conn.cursor()
-        try:
-            cursor.execute(query, params or ())
-            if commit:
-                conn.commit()
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"Error executing query: {query} with params {params}. Error: {e}")
-            raise
-        finally:
-            self.release_connection(conn)
-        return cursor
+from databases.local_database import LocalDatabase
 
 
 class ConversationsDatabase(LocalDatabase):
@@ -172,7 +124,6 @@ class ConversationsDatabase(LocalDatabase):
             DELETE FROM ConversationMessages WHERE message_id = ?
         """
         self.execute_query(query, (message_id,), commit=True)
-        logger.info(f"Deleted message {message_id}")
 
     def delete_conversation(self, conversation_id: int):
         """
@@ -187,7 +138,6 @@ class ConversationsDatabase(LocalDatabase):
         """
         self.execute_query(query, (conversation_id,), commit=True)
         self.execute_query(query_delete_messages, (conversation_id,), commit=True)
-        logger.info(f"Deleted conversation {conversation_id}")
 
     def update_conversation_summary(self, conversation_id: int, summary: str):
         """
@@ -199,8 +149,6 @@ class ConversationsDatabase(LocalDatabase):
             UPDATE Conversations SET summary = ? WHERE conversation_id = ?
         """
         self.execute_query(query, (summary, conversation_id), commit=True)
-        logger.info(f"Updated conversation {conversation_id} summary to {summary}")
-
 
     def update_conversation_end_time(self, conversation_id: int, end_time: str):
         """
@@ -212,9 +160,3 @@ class ConversationsDatabase(LocalDatabase):
             UPDATE Conversations SET end_time = ? WHERE conversation_id = ?
         """
         self.execute_query(query, (end_time, conversation_id), commit=True)
-        logger.info(f"Updated conversation {conversation_id} end_time to {end_time}")
-
-
-if __name__ == '__main__':
-    db = ConversationsDatabase()
-    print(db.update_conversation_summary(14, "123"))

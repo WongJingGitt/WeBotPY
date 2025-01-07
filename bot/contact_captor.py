@@ -1,7 +1,4 @@
-from datetime import datetime
-
-from libs.contact import Contact
-from dataclasses import dataclass, field
+from bot.contact import Contact
 from requests import post
 
 

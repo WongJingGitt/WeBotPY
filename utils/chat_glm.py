@@ -4,9 +4,9 @@ from os import environ
 from pathlib import Path
 from json import loads
 
-from libs.webot import WeBot
+from bot.webot import WeBot
 from utils.toolkit import get_function_tools
-from utils.local_database import ConversationsDatabase
+from databases.conversation_database import ConversationsDatabase
 
 from zhipuai import ZhipuAI
 
