@@ -63,7 +63,6 @@ class ServiceMain(Flask):
         self._bot.set_bot(_bot.remote_port, bot=_bot, info=asdict(_bot.info))
 
     def _hello_world(self):
-        # response = Response(code=200, message='success', data="Hello, World!")
         return send_file(path.join(ROOT_PATH, 'static', 'index.html'))
 
     def _start_bot(self):
