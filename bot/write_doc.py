@@ -16,6 +16,16 @@ import xmltodict
 
 
 def get_all_message(db_handle, wxid, include_image, start_time=None, end_time=None, port=19001):
+    """
+    获取指定联系人的所有消息。
+    :param db_handle: MicroMsg.db数据库句柄
+    :param wxid: 联系人的wxid
+    :param include_image: 是否包含图片消息。默认为 False。
+    :param start_time: 起始时间，格式为 'YYYY-MM-DD HH:MM:SS'。默认为 None。
+    :param end_time: 结束时间，格式为 'YYYY-MM-DD HH:MM:SS'。默认为 None。
+    :param port: 端口号
+    :return: 消息列表。
+    """
     image_type = MessageType.IMAGE_MESSAGE if include_image else ""
     message_type = f"\"{MessageType.TEXT_MESSAGE}\", \"{MessageType.VOICE_MESSAGE}\", \"{MessageType.VIDEO_MESSAGE}\", \"{MessageType.LOCATION_MESSAGE}\", \"{MessageType.EMOJI_MESSAGE}\""
 
@@ -60,6 +70,11 @@ def get_all_message(db_handle, wxid, include_image, start_time=None, end_time=No
 
 
 def check_mention_list(bytes_extra: str):
+    """
+    检查bytesExtra中是否有@人
+    :param bytes_extra: 数据库中bytesExtra
+    :return: @人列表, 没有@人返回空列表
+    """
     bytes_string = b64decode(bytes_extra)
     msg_bytes_extra = MessageBytesExtra()
     msg_bytes_extra.ParseFromString(bytes_string)
@@ -100,6 +115,13 @@ def get_sender_form_room_msg(bytes_extra: str) -> str:
 
 
 def decode_img(message: TextMessageFromDB, save_dir, port=19001) -> str:
+    """
+    解码图片
+    :param message: 消息对象
+    :param save_dir: 保存目录
+    :param port: 端口号
+    :return: 图片路径
+    """
     if message.Type != '3':
         return ""
 
@@ -169,9 +191,21 @@ def get_talker_name(db_handle, wxid, port=19001) -> tuple[str, str]:
     return remark, nick_name
 
 
-def process_messages(msg_db_handle, micro_msg_db_handle, wxid, write_function: Callable, filename=None,
+def process_messages(msg_db_handle, micro_msg_db_handle, wxid, write_function: Callable,
                      include_image=False, start_time=None, end_time=None,
                      port=19001):
+    """
+    处理消息
+    :param msg_db_handle: msg.db数据库句柄
+    :param micro_msg_db_handle: MicroMsg.db数据库句柄
+    :param wxid: 联系人的wxid
+    :param write_function: 具体写入的回调函数
+    :param include_image: 是否包含图片
+    :param start_time:
+    :param end_time:
+    :param port:
+    :return:
+    """
     data = get_all_message(msg_db_handle, wxid, include_image, port=port, start_time=start_time, end_time=end_time)
 
     user_info = post(f'http://127.0.0.1:{port}/api/userInfo').json().get('data')
