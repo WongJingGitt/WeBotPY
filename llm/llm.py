@@ -5,6 +5,9 @@ from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import SecretStr
 
+from llm.llm_types import MissingApiKeyError
+
+
 load_dotenv()
 
 
@@ -14,7 +17,7 @@ class LLMFactory:
     def glm_llm(model="glm-4-flash", *args, **kwargs):
         api_key = getenv("GLM_API_KEY")
         if not api_key:
-            raise EnvironmentError("GLM_API_KEY is not set, please set it in .env file")
+            raise MissingApiKeyError("GLM_API_KEY is not set, please set it in .env file")
 
         return ChatOpenAI(
             model=model,
@@ -28,7 +31,7 @@ class LLMFactory:
     def gemini_llm(model="gemini-2.0-flash-exp", *args, **kwargs):
         api_key = getenv("GEMINI_API_KEY")
         if not api_key:
-            raise EnvironmentError("GEMINI_API_KEY is not set, please set it in .env file")
+            raise MissingApiKeyError("GEMINI_API_KEY is not set, please set it in .env file")
 
         return ChatGoogleGenerativeAI(
             api_key=SecretStr(api_key),
@@ -41,7 +44,21 @@ class LLMFactory:
     def aliyun_deepseek_llm(model="deepseek-v3", *args, **kwargs):
         api_key = getenv("ALIYUN_API_KEY")
         if not api_key:
-            raise EnvironmentError("ALIYUN_API_KEY is not set, please set it in .env file")
+            raise MissingApiKeyError("ALIYUN_API_KEY is not set, please set it in .env file")
+
+        return ChatOpenAI(
+            model=model,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            api_key=SecretStr(api_key),
+            *args,
+            **kwargs,
+        )
+
+    @staticmethod
+    def aliyun_deepseek_r1_llm(model="deepseek-r1", *args, **kwargs):
+        api_key = getenv("ALIYUN_API_KEY")
+        if not api_key:
+            raise MissingApiKeyError("ALIYUN_API_KEY is not set, please set it in .env file")
 
         return ChatOpenAI(
             model=model,
