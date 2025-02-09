@@ -5,6 +5,7 @@ from threading import Thread, Event
 from os import path
 from typing import List, Dict, Callable
 from dataclasses import asdict
+from uuid import uuid4
 
 from utils.project_path import CONFIG_PATH, ROOT_PATH
 from services.service_type import Response, Request
@@ -14,9 +15,11 @@ from utils.chat_glm import chat_with_function_tools as chat_with_glm
 from bot.bot_storage import BotStorage
 from services.service_conversations import ServiceConversations
 from databases.conversation_database import ConversationsDatabase
+from agent.agent import WeBotAgent
 
 from flask import Flask, request, has_request_context, send_file
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit, disconnect
 from requests import post as http_post
 
 
@@ -34,6 +37,8 @@ class ServiceMain(Flask):
         self._latest_bot: WeBot | None = None
         self._event = Event()
         self._conversions_database = ConversationsDatabase()
+        self.socketio = SocketIO(self, path='/api/ai/stream', cors_allowed_origins="http://localhost:3000")
+        self.socketio.init_app(self)
 
     def after_request(self, f):
         """
@@ -176,6 +181,8 @@ class ServiceMain(Flask):
         _bot_object = _bot.get('object')
         _bot_info = _bot.get('info')
 
+
+
         try:
             with open(path.join(CONFIG_PATH, 'function_tools.json'), 'r', encoding='utf-8') as f:
                 tools = loads(f.read())
@@ -251,6 +258,126 @@ class ServiceMain(Flask):
             traceback.print_exc()
             return response.json
 
+    def _handle_connect(self):
+        print('Client connected to /api/ai/stream')
+
+    def _handle_disconnect(self):
+        print('Client disconnected from /api/ai/stream')
+
+    def _handle_chat_message(self, data):
+        if not data:
+            emit('chat_message', "")
+            disconnect()
+            return
+
+        body = Request(body=data, body_keys=['port', 'messages'])
+
+        response = Response(code=200, message='success', data=None)
+
+        if not body.check_body:
+            response.code = 400
+            response.message = "参数错误，可能是微信未启动。  \n请先点击左侧 **登录微信** 按钮启动微信，并且登录。" if not body.body.get(
+                'port') else '参数缺失'
+            emit('chat_message', response.json)
+            disconnect()
+            return
+
+        port = body.body.get('port')
+
+        _bot = self._bot.get_bot(port)
+
+        if not _bot:
+            response.code = 400
+            response.message = '未找到对应端口的机器人'
+            return response.json
+
+        _bot_object = _bot.get('object')
+        _bot_info = _bot.get('info')
+
+        try:
+            agent = WeBotAgent(
+                mode_name="gemini-2.0-flash-exp",
+                llm_options={
+                    "temperature": 0.1,
+                    "top_p": 0.1
+                },
+                webot_port=port
+            )
+
+            conversation_id = body.body.get('conversation_id')
+
+            summary = None
+            start_time = None
+            new_conversation = False
+
+            if not conversation_id:
+                start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                summary = f"新对话 {start_time}"
+                conversation_id = self._conversions_database.add_conversation(
+                    user_id=_bot_info.get('wxid'),
+                    start_time=start_time,
+                    summary=summary
+                )
+                new_conversation = True
+
+            conversation_id = int(conversation_id)
+            self._conversions_database.add_message(
+                conversation_id=conversation_id,
+                role="user",
+                content=body.body.get('messages')[-1].get('content'),
+                timestamp=datetime.fromtimestamp(body.body.get('messages')[-1].get('createAt') / 1000).strftime(
+                    "%Y-%m-%d %H:%M:%S"),
+                visible=1,
+                wechat_message_config=None,
+                message_id=body.body.get('messages')[-1].get('message_id')
+            )
+
+            for event, message in agent.chat({"messages": body.body.get('messages')}):
+                result = message.get('agent')
+                if not result:
+                    continue
+
+                result = result.get('messages')[0].content
+                response_message_id = str(uuid4())
+                response_message_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                response.data = {
+                    "message": result,
+                    "conversation_id": conversation_id,
+                    "new_conversation": new_conversation,
+                    "start_time": start_time,
+                    "summary": summary,
+                    "message_id": response_message_id,
+                    "message_time": response_message_time
+                }
+
+                self._conversions_database.add_message(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=result,
+                    timestamp=response_message_time,
+                    visible=1,
+                    wechat_message_config=None,
+                    message_id=response_message_id
+                )
+                emit('chat_message', response.json)
+            disconnect()
+            return
+        except Exception as e:
+            response.code = 500
+            response.message = str(e)
+            traceback.print_exc()
+            emit('chat_message', response.json)
+            disconnect()
+
+
+
+
+    def register_socketio_events(self):
+        self.socketio.on('connect', namespace='/api/ai/stream')(self._handle_connect)
+        self.socketio.on('disconnect', namespace='/api/ai/stream')(self._handle_disconnect)
+        self.socketio.on('chat_message', namespace='/api/ai/stream')(self._handle_chat_message)
+
     @property
     def _route_map(self) -> List[Dict[str, Callable | str]]:
         return [
@@ -268,6 +395,7 @@ class ServiceMain(Flask):
         for route in self._route_map:
             self.add_url_rule(**route)
         self.register_blueprint(ServiceConversations())
+        self.register_socketio_events()
         super().run(port=port, *args, **kwargs)
 
 
