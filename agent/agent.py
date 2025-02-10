@@ -2,10 +2,12 @@ from typing import List
 
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from llm.llm import LLMFactory
 from tool_call.tools import ALL_TOOLS
+
 
 class PlannerAgent:
     def __init__(self, mode_name: str = "glm-4-flash", llm_options: dict = {}, webot_port: int = 19001):
@@ -24,16 +26,17 @@ class PlannerAgent:
             prompt=SystemMessage(
                 content=self.prompt
             ),
-            tools=[]
+            tools=[],
         )
 
     @property
     def prompt(self):
-
         tools_description = ""
         for _tool in ALL_TOOLS:
             function_name = _tool.name
-            args = [f"\n---\n-参数名：{arg_name}\n-参数类型：{arg_value.annotation}\n-必填：{arg_value.is_required()}\n-描述：{arg_value.description}" for arg_name, arg_value in _tool.args_schema.model_fields.items()]
+            args = [
+                f"\n---\n-参数名：{arg_name}\n-参数类型：{arg_value.annotation}\n-必填：{arg_value.is_required()}\n-描述：{arg_value.description}"
+                for arg_name, arg_value in _tool.args_schema.model_fields.items()]
             tools_description = tools_description + f"""
 函数名：{function_name}
 函数描述：
@@ -131,10 +134,30 @@ class PlannerAgent:
         return self.agent.invoke(message, config={"configurable": {"thread_id": 41}})
 
 
+class TaskExecutorAgent:
+    def __init__(self, mode_name: str = "glm-4-flash", llm_options: dict = {}, webot_port: int = 19001):
+        self.port = webot_port
+        self.llm = {
+            "glm-4-flash": LLMFactory.glm_llm(**llm_options),
+            "gemini-2.0-flash-exp": LLMFactory.gemini_llm(**llm_options),
+            "deepseek-v3-aliyun": LLMFactory.aliyun_deepseek_llm(**llm_options),
+            "deepseek-r1-aliyun": LLMFactory.aliyun_deepseek_r1_llm(**llm_options)
+        }.get(mode_name, LLMFactory.glm_llm())
+
+        self.agent = create_react_agent(
+            model=self.llm,
+            tools=ALL_TOOLS,
+            prompt=SystemMessage(
+                content=f"""
+
+"""
+            )
+        )
+
+
 class WeBotAgent:
 
     def __init__(self, mode_name: str = "glm-4-flash", llm_options: dict = {}, webot_port: int = 19001):
-
         self.llm = {
             "glm-4-flash": LLMFactory.glm_llm(**llm_options),
             "gemini-2.0-flash-exp": LLMFactory.gemini_llm(**llm_options),
@@ -219,7 +242,7 @@ class WeBotAgent:
             )
         )
 
-    def chat(self, message):# -> List[HumanMessage|AIMessage|ToolMessage]:
+    def chat(self, message):  # -> List[HumanMessage|AIMessage|ToolMessage]:
         return self.agent.stream(message, stream_mode=['updates'], config={"configurable": {"thread_id": 42}})
         # result = self.agent.invoke(message, config={"configurable": {"thread_id": 42}})
         # return result.get('messages')
@@ -235,8 +258,13 @@ if __name__ == '__main__':
     #         "top_p": 0.1
     #     }
     # )
-    # response = agent.chat({"messages": [HumanMessage("看下我和小布丁最近一周都吃了什么")]})
+    # response = agent.chat({"messages": [HumanMessage("")]})
     # for item in response:
     #     print(item)
-    result = PlannerAgent(mode_name="gemini-2.0-flash-exp").chat({"messages": [HumanMessage("看下我和小布丁最近一周都吃了什么，然后转发给她")]})
+    agent = PlannerAgent(
+        # mode_name="gemini-2.0-flash-exp",
+        mode_name="deepseek-v3-aliyun",
+    )
+    result = agent.chat(
+        {"messages": [HumanMessage("帮我总结我和吴彦祖昨天一整天的聊天，把我们最后得出的方案做一个汇总，然后再转发给小吴，并且提醒他整理成PPT在明天下午2点之前给我。")]})
     print(result.get('messages')[-1].content)
