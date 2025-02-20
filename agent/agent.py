@@ -1,3 +1,4 @@
+import json
 from typing import List
 
 from langgraph.prebuilt import create_react_agent
@@ -5,10 +6,13 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from agent_types import StepItem, PlannerResult
 from llm.llm import LLMFactory
 from tool_call.tools import ALL_TOOLS
 
 
+# TODO:
+#   执行师不会执行JSON格式的任务，需要考虑计划师的输出格式，考虑输出自然语言，并且指示执行师需要执行推理或者询问用户。
 class PlannerAgent:
     def __init__(self, mode_name: str = "glm-4-flash", llm_options: dict = {}, webot_port: int = 19001):
         self.port = webot_port
@@ -98,7 +102,7 @@ class PlannerAgent:
         "keyword": "深圳兼职群"
       }},
       "depends_on": [],
-      "clarification": "如果找到了多个联系人，需用户确认选择"
+      "clarification": "如果找到了多个联系人，需用户确认选择",
       "decision_required": ""
     }},
     {{
@@ -135,8 +139,8 @@ class PlannerAgent:
 
 
 class TaskExecutorAgent:
-    def __init__(self, mode_name: str = "glm-4-flash", llm_options: dict = {}, webot_port: int = 19001):
-        self.port = webot_port
+    def __init__(self, mode_name: str = "glm-4-flash", llm_options: dict = {},
+                 current_step: StepItem = None, plan: PlannerResult = None, webot_port: int = 19001, *args, **kwargs):
         self.llm = {
             "glm-4-flash": LLMFactory.glm_llm(**llm_options),
             "gemini-2.0-flash-exp": LLMFactory.gemini_llm(**llm_options),
@@ -149,10 +153,23 @@ class TaskExecutorAgent:
             tools=ALL_TOOLS,
             prompt=SystemMessage(
                 content=f"""
+你是一个微信智能助手的**任务执行专家**”，主要负责调用相关的工具函数，将任务执行并且落地。
+- 当前微信的Port为{webot_port}
 
+## 流程简介：
+1. 你会收到一份由任务规划专家给到的任务计划，其中包含若干个步骤。
+2. 你需要根据步骤中提到的工具函数，按照顺序依次执行。
+3. 遵循相关的步骤依赖计划，按需传递参数
+
+## 核心原则：
+1. 必须优先保证工具函数被正确的执行，包括函数的执行与参数传递。
 """
-            )
+            ),
+            checkpointer=MemorySaver()
         )
+
+    def chat(self, message):
+        return self.agent.stream(message, config={"configurable": {"thread_id": 40}}, stream_mode=['updates'])
 
 
 class WeBotAgent:
@@ -261,10 +278,30 @@ if __name__ == '__main__':
     # response = agent.chat({"messages": [HumanMessage("")]})
     # for item in response:
     #     print(item)
-    agent = PlannerAgent(
-        # mode_name="gemini-2.0-flash-exp",
-        mode_name="deepseek-v3-aliyun",
+    # agent = PlannerAgent(
+    #     mode_name="gemini-2.0-flash-exp",
+    #     # mode_name="deepseek-v3-aliyun",
+    # )
+    # result = agent.chat(
+    #     {"messages": [HumanMessage("帮我总结测试群最近一年的聊天，然后再转发给测试号，并且提醒他整理成PPT在明天下午2点之前给我。")]})
+    #
+    # plan = result.get('messages')[-1].content
+    # print(plan)
+    plan = """
+    请依次执行下面这个计划中的步骤，并且调用tool中描述的工具函数：
+    1. 查找包含“测试群的备注”关键字的联系人，如果找到了多个联系人，需用户确认选择
+    2. 查找包含“测试号”关键字的联系人，如果找到了多个联系人，需用户确认选择
+    3. 获取当前时间，然后推断过去一年的时间范围
+    4. 获取测试群最近一年的聊天记录，总结并提取聊天记录中的关键信息。
+    5. 将总结的聊天记录转发给测试号，并提醒他整理成PPT在明天下午2点之前给我
+    """
+
+    task = TaskExecutorAgent(
+        mode_name="gemini-2.0-flash-exp",
+        # mode_name="deepseek-v3-aliyun",
     )
-    result = agent.chat(
-        {"messages": [HumanMessage("帮我总结我和吴彦祖昨天一整天的聊天，把我们最后得出的方案做一个汇总，然后再转发给小吴，并且提醒他整理成PPT在明天下午2点之前给我。")]})
-    print(result.get('messages')[-1].content)
+
+    for event, item in task.chat({"messages": [HumanMessage(plan)]}):
+        print(item)
+
+
