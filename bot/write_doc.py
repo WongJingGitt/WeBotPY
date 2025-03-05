@@ -204,7 +204,7 @@ def get_talker_name(db_handle, wxid, port=19001) -> tuple[str, str, str]:
         CONTACT_LIST[port] = contacts_dict
         contact_list = contacts_dict
 
-    result = contact_list.get(wxid)
+    result = contact_list.get(wxid, [])
     # result 数据结构
     # [
     #     "UserName",
@@ -224,7 +224,7 @@ def get_talker_name(db_handle, wxid, port=19001) -> tuple[str, str, str]:
     #     "smallHeadImgUrl"
     # ]
 
-    remark, nick_name = result[3] if len(result) > 3 else "", result[4] if len(result) > 4 else ""
+    remark, nick_name = result[3] if len(result) > 3 else "未知用户", result[4] if len(result) > 4 else "未知用户"
     return remark, nick_name, wxid
 
 
