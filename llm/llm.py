@@ -67,3 +67,16 @@ class LLMFactory:
             *args,
             **kwargs,
         )
+
+    @staticmethod
+    def aliyun_qwen2_5_14b_llm(model="qwen2.5-14b-instruct-1m", *args, **kwargs):
+        api_key = getenv("ALIYUN_API_KEY")
+        if not api_key:
+            raise MissingApiKeyError("ALIYUN_API_KEY is not set, please set it in .env file")
+        return ChatOpenAI(
+            model=model,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            api_key=SecretStr(api_key),
+            *args,
+            **kwargs,
+        )
