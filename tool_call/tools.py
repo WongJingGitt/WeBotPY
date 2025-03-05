@@ -93,6 +93,20 @@ def get_message_by_wxid_and_time(wxid, port, start_time, end_time):
     )
 
 
+def export_message(wxid, port, start_time, end_time):
+    port = int(port)
+    return write_txt(
+        msg_db_handle=get_msg_handle(port),
+        micro_msg_db_handle=get_micro_msg_handle(port),
+        wxid=wxid,
+        port=port,
+        start_time=start_time,
+        end_time=end_time,
+        endswith_txt=True,
+        file_type='json'
+    )
+
+
 def send_text_message(port, wxid, message):
     port = int(port)
     return post(
@@ -169,9 +183,19 @@ ALL_TOOLS = [
     - `code`: 返回状态,不为0代表发送成功, 0代表发送失败
     - `result`: 成功提示
 """
+    ),
+    StructuredTool.from_function(
+        name="export_message",
+        func=export_message,
+        args_schema=GetMessageByWxidAndTimeInput,
+        description="""
+一个用作导出聊天记录文件的工具函数，传入wxid与时间范围，将聊天记录导出为txt文件保存在本地，并且返回文件的绝对路径
+"""
     )
 ]
 
 if __name__ == '__main__':
-    r = get_message_by_wxid_and_time(**{"start_time": "2024-02-21 14:18:42", "wxid": "21162045894@chatroom", "end_time": "2025-02-21 14:18:42", "port": 19001.0})
+    r = get_message_by_wxid_and_time(
+        **{"start_time": "2024-02-21 14:18:42", "wxid": "21162045894@chatroom", "end_time": "2025-02-21 14:18:42",
+           "port": 19001.0})
     print(r)
