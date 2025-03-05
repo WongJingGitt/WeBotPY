@@ -5,8 +5,9 @@ from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_text_splitters.json import RecursiveJsonSplitter
 
-from agent_types import StepItem, PlannerResult
+from agent.agent_types import StepItem, PlannerResult
 from llm.llm import LLMFactory
 from tool_call.tools import ALL_TOOLS
 
@@ -297,7 +298,7 @@ if __name__ == '__main__':
     """
 
     task = TaskExecutorAgent(
-        mode_name="gemini-2.0-flash-exp",
+        # mode_name="gemini-2.0-flash-exp",
         # mode_name="deepseek-v3-aliyun",
     )
 
