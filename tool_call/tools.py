@@ -194,8 +194,3 @@ ALL_TOOLS = [
     )
 ]
 
-if __name__ == '__main__':
-    r = get_message_by_wxid_and_time(
-        **{"start_time": "2024-02-21 14:18:42", "wxid": "21162045894@chatroom", "end_time": "2025-02-21 14:18:42",
-           "port": 19001.0})
-    print(r)

@@ -37,7 +37,7 @@ class ServiceMain(Flask):
         self._latest_bot: WeBot | None = None
         self._event = Event()
         self._conversions_database = ConversationsDatabase()
-        self.socketio = SocketIO(self, path='/api/ai/stream', cors_allowed_origins="http://localhost:3000")
+        self.socketio = SocketIO(self, path='/api/ai/stream', cors_allowed_origins="*")
         self.socketio.init_app(self)
 
     def after_request(self, f):
