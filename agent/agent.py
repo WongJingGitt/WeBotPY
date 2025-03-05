@@ -7,7 +7,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_text_splitters.json import RecursiveJsonSplitter
 
-from agent_types import StepItem, PlannerResult
+from agent.agent_types import StepItem, PlannerResult
 from llm.llm import LLMFactory
 from tool_call.tools import ALL_TOOLS
 
@@ -231,25 +231,4 @@ class WeBotAgent:
         return self.agent.stream(message, stream_mode=['updates'], config={"configurable": {"thread_id": 42}})
         # result = self.agent.invoke(message, config={"configurable": {"thread_id": 42}})
         # return result.get('messages')
-
-
-if __name__ == '__main__':
-    agent = WeBotAgent(
-        mode_name="gemini-2.0-flash-exp",
-        # mode_name="deepseek-v3-aliyun",
-        # mode_name="deepseek-r1-aliyun",
-        # mode_name="qwen2.5",
-        llm_options={
-            "temperature": 0.3,
-            "top_p": 0.1
-        }
-    )
-    response = agent.chat({"messages": [
-        HumanMessage("帮我导出一下'口吐芬芳'中2024到2025年跨年那两天的聊天记录"),
-        # AIMessage("找到了两个名为“口吐芬芳”的群聊，请问你要提取哪个群的聊天记录？\n- 口吐芬芳沙雕网友（纯爱版），wxid: 20016684891@chatroom\n- 口吐芬芳沙雕网友（打工版），wxid: 19086776380@chatroom"),
-        # HumanMessage("口吐芬芳沙雕网友（纯爱版）"),
-    ]})
-    for item in response:
-        print(item)
-
 
