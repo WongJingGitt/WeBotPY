@@ -14,6 +14,8 @@ from docx import Document
 from docx.shared import Pt
 import xmltodict
 
+CONTACT_LIST = {}
+
 
 def get_all_message(db_handle, wxid, include_image, start_time=None, end_time=None, port=19001):
     """
@@ -59,14 +61,19 @@ def get_all_message(db_handle, wxid, include_image, start_time=None, end_time=No
 
         time_condition += f" AND CreateTime <= {end_timestamp}"
 
-    # 构建 SQL 查询语句
-    body = {
-        "dbHandle": db_handle,
-        "sql": f"SELECT * FROM MSG WHERE StrTalker = \"{wxid}\" AND Type in ({message_type}){time_condition} ORDER BY "
-               f"CreateTime ASC",
-    }
+    result = []
+    for handle in db_handle:
+        # 构建 SQL 查询语句
+        body = {
+            "dbHandle": handle,
+            "sql": f"SELECT * FROM MSG WHERE StrTalker = \"{wxid}\" AND Type in ({message_type}){time_condition} ORDER BY "
+                   f"CreateTime ASC;",
+        }
+        response = (post(f'http://127.0.0.1:{port}/api/execSql', json=body).json()).get('data')
+        result += response[1:]
 
-    return (post(f'http://127.0.0.1:{port}/api/execSql', json=body).json()).get('data')
+    result.sort(key=lambda x: x[6])
+    return result
 
 
 def check_mention_list(bytes_extra: str):
@@ -167,7 +174,7 @@ def decode_img(message: TextMessageFromDB, save_dir, port=19001) -> str:
     return ""
 
 
-def get_talker_name(db_handle, wxid, port=19001) -> tuple[str, str]:
+def get_talker_name(db_handle, wxid, port=19001) -> tuple[str, str, str]:
     """
     从数据库获取微信用户的微信名
     :param db_handle: MicroMsg.db数据库句柄
@@ -175,20 +182,50 @@ def get_talker_name(db_handle, wxid, port=19001) -> tuple[str, str]:
     :param port: 端口号
     :return: tuple[备注, 微信名]
     """
-    body = {
-        "dbHandle": db_handle,
-        "sql": f"SELECT Remark,NickName From Contact Where UserName = \"{wxid}\""
-    }
-    resp = post(f'http://127.0.0.1:{port}/api/execSql', json=body).json()
-    if resp.get('code') != 1:
-        return '', ''
+    contact_list = CONTACT_LIST.get(port, None)
 
-    result = resp.get('data')
-    if len(result) < 2:
-        return '', ''
+    if not contact_list:
+        body = {
+            "dbHandle": db_handle,
+            "sql": f"SELECT ct.UserName, ct.Alias, ct.EncryptUserName, ct.Remark, ct.NickName, ct.LabelIDList, ct.PYInitial, ct.QuanPin, ct.Reserved1, ct.Reserved2, ct.VerifyFlag, ct.Type, ct.ExtraBuf, cth.bigHeadImgUrl, cth.smallHeadImgUrl FROM Contact AS ct LEFT JOIN ContactHeadImgUrl AS cth ON ct.UserName = cth.usrName"
+        }
+        resp = post(f'http://127.0.0.1:{port}/api/execSql', json=body).json()
 
-    remark, nick_name = result[-1]
-    return remark, nick_name
+        if resp.get('code') != 1:
+            return '', '', ""
+
+        contacts = resp.get('data')
+        contacts_dict = {}
+        for index, item in enumerate(contacts):
+            if index == 0:
+                continue
+            contacts_dict[item[0]] = item
+
+        CONTACT_LIST[port] = contacts_dict
+        contact_list = contacts_dict
+
+    result = contact_list.get(wxid)
+    # result 数据结构
+    # [
+    #     "UserName",
+    #     "Alias",
+    #     "EncryptUserName",
+    #     "Remark",
+    #     "NickName",
+    #     "LabelIDList",
+    #     "PYInitial",
+    #     "QuanPin",
+    #     "Reserved1",
+    #     "Reserved2",
+    #     "VerifyFlag",
+    #     "Type",
+    #     "ExtraBuf",
+    #     "bigHeadImgUrl",
+    #     "smallHeadImgUrl"
+    # ]
+
+    remark, nick_name = result[3] if len(result) > 3 else "", result[4] if len(result) > 4 else ""
+    return remark, nick_name, wxid
 
 
 def process_messages(msg_db_handle, micro_msg_db_handle, wxid, write_function: Callable,
@@ -220,18 +257,15 @@ def process_messages(msg_db_handle, micro_msg_db_handle, wxid, write_function: C
         makedirs(exports_path)
 
     for index, item in enumerate(data):
-        if index == 0:
-            continue
-
         message = TextMessageFromDB(*item)
         # 获取发送人名称
         image_path = ""
 
         if message.IsSender == '1':
-            remark, nick_name = "用户自己", user_info.get('name')
+            remark, nick_name, sender_id = "用户自己", user_info.get('name'), user_info.get('wxid')
         else:
             sender_id = get_sender_form_room_msg(message.BytesExtra) if message.room else message.StrTalker
-            remark, nick_name = get_talker_name(micro_msg_db_handle, sender_id, port)
+            remark, nick_name, _ = get_talker_name(micro_msg_db_handle, sender_id, port)
 
         room = message.room
         mention_list = ""
@@ -240,7 +274,7 @@ def process_messages(msg_db_handle, micro_msg_db_handle, wxid, write_function: C
             # 获取提及人名称
             mention_list = check_mention_list(message.BytesExtra)
             mention_list = [get_talker_name(micro_msg_db_handle, user_id, port) for user_id in mention_list if user_id]
-            mention_list = [f"{_nick_name}({_remark})" if _remark else _nick_name for _remark, _nick_name in
+            mention_list = [f"{_nick_name}({_remark})[{_wxid}]" if _remark else f"{_nick_name}[{_wxid}]" for _remark, _nick_name, _wxid in
                             mention_list]
 
         if message.Type == MessageType.IMAGE_MESSAGE:
@@ -250,7 +284,7 @@ def process_messages(msg_db_handle, micro_msg_db_handle, wxid, write_function: C
         format_time = datetime.fromtimestamp(int(message.CreateTime)).strftime('%Y-%m-%d %H:%M:%S')
         message_content = message.StrContent if message.Type == MessageType.TEXT_MESSAGE else image_path
 
-        write_function(nick_name, remark, format_time, message_content, mention_list, room, message)
+        write_function(nick_name, remark, format_time, message_content, mention_list, room, message, sender_id)
 
 
 def write_doc(msg_db_handle, micro_msg_db_handle, wxid, doc_filename=None, include_image=False,
@@ -269,7 +303,7 @@ def write_doc(msg_db_handle, micro_msg_db_handle, wxid, doc_filename=None, inclu
     """
     doc = Document()
 
-    main_remark, main_username = get_talker_name(micro_msg_db_handle, wxid, port=port)
+    main_remark, main_username, _ = get_talker_name(micro_msg_db_handle, wxid, port=port)
     doc_filename = f"{main_username}_{main_remark}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.docx" if not \
         doc_filename else doc_filename
 
@@ -290,7 +324,7 @@ def write_doc(msg_db_handle, micro_msg_db_handle, wxid, doc_filename=None, inclu
     doc.add_heading("数据：", level=1)
 
     def callback(_nick_name, _remark, _format_time, _message_content, _mention_list, _room,
-                 _original_message: TextMessageFromDB):
+                 _original_message: TextMessageFromDB, sender_id=None):
         doc.add_paragraph("=== 消息开始 ===")
         doc.add_paragraph(f'发送人：{_nick_name}')
         if _remark: doc.add_paragraph(f'备注：{_remark}')
@@ -331,7 +365,7 @@ def write_doc(msg_db_handle, micro_msg_db_handle, wxid, doc_filename=None, inclu
 
 def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
               port=19001, file_type='json', endswith_txt=True, start_time=None, end_time=None):
-    main_remark, main_username = get_talker_name(micro_msg_db_handle, wxid, port=port)
+    main_remark, main_username, _ = get_talker_name(micro_msg_db_handle, wxid, port=port)
     is_room = '@chatroom' in wxid
 
     result = {
@@ -343,6 +377,7 @@ def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
                 "remark": "对消息发送人的备注，如果为空则代表该联系人没有备注",
                 "content": "具体的消息内容",
                 "time": "消息发送时间",
+                "wxid": "消息发送人的wxid，每个用户的唯一id，可以用来判断消息发送人是否是同一位。"
             }
         },
         "data": []
@@ -351,8 +386,7 @@ def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
     if is_room: result['meta']['field']['mentioned'] = "消息中提及到的用户，如果为空则代表这条消息没有提及任何人"
 
     def callback(_nick_name, _remark, _format_time, _message_content, _mention_list, _room,
-                 _original_message: TextMessageFromDB):
-
+                 _original_message: TextMessageFromDB, sender_id=None):
         content_types = {
             MessageType.IMAGE_MESSAGE: "[图片]",
             MessageType.VIDEO_MESSAGE: "[视频]",
@@ -367,6 +401,7 @@ def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
             "remark": _remark,
             "content": content_types.get(_original_message.Type),
             "time": _format_time,
+            "wxid": sender_id
         }
         if _room: item['mentioned'] = _mention_list
         result['data'].append(item)
@@ -380,13 +415,14 @@ def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
         include_image=True, start_time=start_time, end_time=end_time
     )
 
+    if file_type is None: return result
+
     if file_type.lower() not in ['json', 'yaml', 'yml']: file_type = 'json'
 
     file_ends = '.txt' if endswith_txt else f".{file_type}"
     filename = f"{main_username}_{main_remark}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}{file_ends}" if not \
         filename else filename
     file_path = path.join(DATA_PATH, 'exports', filename)
-
     if file_type.lower() == 'json':
         with open(file_path, 'w', encoding='utf-8') as fw:
             fw.write(json.dumps(result, ensure_ascii=False, indent=4))
@@ -400,3 +436,16 @@ def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
             fa.write('\n')
             fa.write(yaml.dump({"data": result.get('data')}, allow_unicode=True))
         return file_path
+
+
+if __name__ == '__main__':
+    write_txt(
+        micro_msg_db_handle=2721220135104,
+        msg_db_handle=[2721354727376, 2721345442720, ],
+        wxid='24572149911@chatroom',
+        port=19001,
+        file_type='json',
+        endswith_txt=True,
+        start_time="2025-03-01 00:00:00",
+        end_time="2025-03-04 23:59:00"
+    )
