@@ -1,3 +1,4 @@
+import re
 from json import loads
 from os import environ
 from pathlib import Path
@@ -39,14 +40,15 @@ class WeBot(Bot):
         return micro_msg_database.get('handle')
 
     @property
-    def get_msg_handle(self):
+    def get_msg_handle(self) -> List[int]:
         """
         获取MSG0数据库的句柄。
 
         :return: 返回MSG0数据库的句柄。
         """
-        [database] = [item for item in self.get_db_info() if item.get('databaseName') == 'MSG0.db']
-        return database.get('handle')
+
+        handles = [item.get('handle') for item in self.get_db_info() if re.match(r'^MSG\d+\.db$', item.get('databaseName'))]
+        return handles
 
     def get_db_info(self) -> List[Dict]:
         """
@@ -111,9 +113,11 @@ class WeBot(Bot):
         _type = "AND Type = \"1\"" if text_only else ""
         sql = f"SELECT * FROM MSG WHERE StrTalker = \"{talker_id}\" {_type} ORDER BY CreateTime ASC LIMIT {limit}"
 
-        result = self.exec_sql(handel, sql)
-
-        return result.data[1:]
+        result = []
+        for handle in handel:
+            item = self.exec_sql(handle, sql)
+            result += item.data
+        return result
 
     def get_contact_profile(self, wxid: str) -> Response:
         """
