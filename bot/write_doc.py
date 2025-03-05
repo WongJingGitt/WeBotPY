@@ -436,16 +436,3 @@ def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
             fa.write('\n')
             fa.write(yaml.dump({"data": result.get('data')}, allow_unicode=True))
         return file_path
-
-
-if __name__ == '__main__':
-    write_txt(
-        micro_msg_db_handle=2721220135104,
-        msg_db_handle=[2721354727376, 2721345442720, ],
-        wxid='24572149911@chatroom',
-        port=19001,
-        file_type='json',
-        endswith_txt=True,
-        start_time="2025-03-01 00:00:00",
-        end_time="2025-03-04 23:59:00"
-    )
