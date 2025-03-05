@@ -1,10 +1,10 @@
+import re
 from datetime import datetime
 from typing import List, Dict, Any
 
 from langchain_core.tools import StructuredTool
 from requests import post
 
-from bot.message import MessageType
 from bot.write_doc import write_txt
 from tool_call.tools_types import CurrentTimeResult, GetContentInput, ContentResult, UserInfoResult, GetUserInfoInput, \
     GetMessageByWxidAndTimeInput, SendTextMessageInput
@@ -19,16 +19,18 @@ def get_current_time() -> CurrentTimeResult:
         "current_timezone": str(now.astimezone().tzinfo),
     })
 
+
 def get_db_info(port: int) -> List[Dict[str, Any]]:
     return post(f'http://127.0.0.1:{port}/api/getDBInfo').json().get('data')
+
 
 def get_micro_msg_handle(port: int):
     [micro_msg_database] = [item for item in get_db_info(port) if item.get('databaseName') == "MicroMsg.db"]
     return micro_msg_database.get('handle')
 
+
 def get_msg_handle(port: int):
-    [msg_database] = [item for item in get_db_info(port) if item.get('databaseName') == 'MSG0.db']
-    return msg_database.get('handle')
+    return [item.get('handle') for item in get_db_info(port) if re.match(r'^MSG\d+\.db$', item.get('databaseName'))]
 
 
 def get_contact(port, keyword) -> List[ContentResult]:
@@ -76,6 +78,7 @@ def get_user_info(port) -> UserInfoResult:
         wxid=result.get('wxid')
     )
 
+
 def get_message_by_wxid_and_time(wxid, port, start_time, end_time):
     port = int(port)
     return write_txt(
@@ -89,6 +92,7 @@ def get_message_by_wxid_and_time(wxid, port, start_time, end_time):
         file_type=None
     )
 
+
 def send_text_message(port, wxid, message):
     port = int(port)
     return post(
@@ -98,6 +102,7 @@ def send_text_message(port, wxid, message):
             "msg": message
         }
     ).json()
+
 
 ALL_TOOLS = [
     StructuredTool.from_function(
@@ -167,6 +172,6 @@ ALL_TOOLS = [
     )
 ]
 
-
 if __name__ == '__main__':
-    print(ALL_TOOLS[1].args_schema.model_fields['port'])
+    r = get_message_by_wxid_and_time(**{"start_time": "2024-02-21 14:18:42", "wxid": "21162045894@chatroom", "end_time": "2025-02-21 14:18:42", "port": 19001.0})
+    print(r)
