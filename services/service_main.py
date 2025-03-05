@@ -24,13 +24,13 @@ from requests import post as http_post
 
 
 class ServiceMain(Flask):
-
     """
     后端服务类，用作处理自定义逻辑，在WXHOOK原生请求之外加一层服务来实现一些自定义逻辑。
     """
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, import_name=__name__, static_url_path="/", static_folder=path.join(ROOT_PATH, 'static'))
+        super().__init__(*args, **kwargs, import_name=__name__, static_url_path="/",
+                         static_folder=path.join(ROOT_PATH, 'static'))
         self.config['TIMEOUT'] = 300
         CORS(self)
         self._bot: BotStorage = BotStorage()
@@ -181,8 +181,6 @@ class ServiceMain(Flask):
         _bot_object = _bot.get('object')
         _bot_info = _bot.get('info')
 
-
-
         try:
             with open(path.join(CONFIG_PATH, 'function_tools.json'), 'r', encoding='utf-8') as f:
                 tools = loads(f.read())
@@ -211,7 +209,8 @@ class ServiceMain(Flask):
                 conversation_id=conversation_id,
                 role="user",
                 content=body.body.get('messages')[-1].get('content'),
-                timestamp=datetime.fromtimestamp(body.body.get('messages')[-1].get('createAt') / 1000).strftime("%Y-%m-%d %H:%M:%S"),
+                timestamp=datetime.fromtimestamp(body.body.get('messages')[-1].get('createAt') / 1000).strftime(
+                    "%Y-%m-%d %H:%M:%S"),
                 visible=1,
                 wechat_message_config=None,
                 message_id=body.body.get('messages')[-1].get('message_id')
@@ -369,9 +368,6 @@ class ServiceMain(Flask):
             traceback.print_exc()
             emit('chat_message', response.json)
             disconnect()
-
-
-
 
     def register_socketio_events(self):
         self.socketio.on('connect', namespace='/api/ai/stream')(self._handle_connect)
