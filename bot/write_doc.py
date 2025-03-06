@@ -28,11 +28,7 @@ def get_all_message(db_handle, wxid, include_image, start_time=None, end_time=No
     :param port: 端口号
     :return: 消息列表。
     """
-    image_type = MessageType.IMAGE_MESSAGE if include_image else ""
-    message_type = f"\"{MessageType.TEXT_MESSAGE}\", \"{MessageType.VOICE_MESSAGE}\", \"{MessageType.VIDEO_MESSAGE}\", \"{MessageType.LOCATION_MESSAGE}\", \"{MessageType.EMOJI_MESSAGE}\""
-
-    if image_type:
-        message_type += f", \"{image_type}\""
+    message_type = f"\"{MessageType.TEXT_MESSAGE}\", \"{MessageType.VOICE_MESSAGE}\", \"{MessageType.VIDEO_MESSAGE}\", \"{MessageType.LOCATION_MESSAGE}\", \"{MessageType.EMOJI_MESSAGE}\", \"{MessageType.IMAGE_MESSAGE}\""
 
     # 处理时间戳或格式化时间
     time_condition = ""
@@ -277,12 +273,12 @@ def process_messages(msg_db_handle, micro_msg_db_handle, wxid, write_function: C
             mention_list = [f"{_nick_name}({_remark})[{_wxid}]" if _remark else f"{_nick_name}[{_wxid}]" for _remark, _nick_name, _wxid in
                             mention_list]
 
-        if message.Type == MessageType.IMAGE_MESSAGE:
+        if message.Type == MessageType.IMAGE_MESSAGE and include_image:
             image_path = decode_img(message, path.join(DATA_PATH, 'images'), port=port)
 
         mention_list = ' || '.join(mention_list)
         format_time = datetime.fromtimestamp(int(message.CreateTime)).strftime('%Y-%m-%d %H:%M:%S')
-        message_content = message.StrContent if message.Type == MessageType.TEXT_MESSAGE else image_path
+        message_content = image_path if message.Type == MessageType.IMAGE_MESSAGE and include_image else message.StrContent
 
         write_function(nick_name, remark, format_time, message_content, mention_list, room, message, sender_id)
 
@@ -364,7 +360,7 @@ def write_doc(msg_db_handle, micro_msg_db_handle, wxid, doc_filename=None, inclu
 
 
 def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
-              port=19001, file_type='json', endswith_txt=True, start_time=None, end_time=None):
+              port=19001, file_type='json', endswith_txt=True, start_time=None, end_time=None, include_image=False):
     main_remark, main_username, _ = get_talker_name(micro_msg_db_handle, wxid, port=port)
     is_room = '@chatroom' in wxid
 
@@ -412,7 +408,7 @@ def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
         wxid=wxid,
         write_function=callback,
         port=port,
-        include_image=True, start_time=start_time, end_time=end_time
+        include_image=include_image, start_time=start_time, end_time=end_time
     )
 
     if file_type is None: return result
