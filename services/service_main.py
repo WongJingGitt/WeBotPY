@@ -37,7 +37,7 @@ class ServiceMain(Flask):
         self._latest_bot: WeBot | None = None
         self._event = Event()
         self._conversions_database = ConversationsDatabase()
-        self.socketio = SocketIO(self, path='/api/ai/stream', cors_allowed_origins="*")
+        self.socketio = SocketIO(self, path='/api/ai/stream', cors_allowed_origins=['http://127.0.0.1:16001', 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:16001'])
         self.socketio.init_app(self)
 
     def after_request(self, f):
@@ -295,7 +295,7 @@ class ServiceMain(Flask):
 
         try:
             agent = WeBotAgent(
-                mode_name="gemini-2.0-flash-exp",
+                model_name=body.body.get('model', "glm-4-flash"),
                 llm_options={
                     "temperature": 0.1,
                     "top_p": 0.1
@@ -332,11 +332,30 @@ class ServiceMain(Flask):
             )
 
             for event, message in agent.chat({"messages": body.body.get('messages')}):
-                result = message.get('agent')
-                if not result:
+                update_message = message.get('agent')
+                print('---------')
+                print(event, message)
+                print('---------')
+                if not update_message:
                     continue
 
-                result = result.get('messages')[0].content
+                result = update_message.get('messages')[0].content
+                function_call = update_message.get('messages')[0].additional_kwargs.get('tool_calls', [{'function': {"name"}}])
+
+                if result.strip() == '' and function_call[0].get('function').get('name') is not None:
+                    function_name = function_call[0].get('function').get('name')
+                    result = {
+                        "get_current_time": "正在获取当前时间，进行时间推断。",
+                        "get_contact": '正在搜寻联系人',
+                        "get_user_info": '正在获取当前登录用户信息',
+                        "get_message_by_wxid_and_time": '正在获取聊天记录',
+                        "send_text_message": '正在发送消息中',
+                        "export_message": '正在导出聊天记录'
+                    }.get(function_name, "正在思考中...")
+
+                if result == '':
+                    result = '正在思考中...'
+
                 response_message_id = str(uuid4())
                 response_message_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
