@@ -1,10 +1,10 @@
 import json
-from typing import List
+from typing import List, Dict
 
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
 
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
 from langchain_text_splitters.json import RecursiveJsonSplitter
 
 from agent.agent_types import StepItem, PlannerResult
@@ -175,14 +175,15 @@ class TaskExecutorAgent:
 
 class WeBotAgent:
 
-    def __init__(self, mode_name: str = "glm-4-flash", llm_options: dict = {}, webot_port: int = 19001):
+    def __init__(self, model_name: str = "glm-4-flash", llm_options: dict = {}, webot_port: int = 19001):
         self.llm = {
             "glm-4-flash": LLMFactory.glm_llm(**llm_options),
             "gemini-2.0-flash-exp": LLMFactory.gemini_llm(**llm_options),
             "deepseek-v3-aliyun": LLMFactory.aliyun_deepseek_llm(**llm_options),
             "deepseek-r1-aliyun": LLMFactory.aliyun_deepseek_r1_llm(**llm_options),
-            "qwen2.5": LLMFactory.aliyun_qwen2_5_14b_llm(**llm_options)
-        }.get(mode_name, LLMFactory.glm_llm())
+            "qwen2.5": LLMFactory.aliyun_qwen2_5_14b_llm(**llm_options),
+            "deepseek_v3": LLMFactory.deepseek_v3_llm(**llm_options)
+        }.get(model_name, LLMFactory.glm_llm())
 
         self.checkpoint = MemorySaver()
 
@@ -204,7 +205,7 @@ class WeBotAgent:
 2. **工作流程**  
    - **意图识别与信息提取**：准确捕捉用户意图，提取关键数据（如时间、联系人、群聊等）。  
    - **方案规划与执行**：根据需求分步调用工具函数（如：先调用 `get_current_time` 获取当前时间，再计算时间区间，后续调用其它函数）。  
-   - **状态反馈**：每一步操作后立即反馈结果；如遇失败，重试或提示用户手动操作。  
+   - **状态反馈**：每一步操作后立即反馈结果，并且描述当前操作内容；如遇失败，重试或提示用户手动操作。  
    - **总结返回**：任务结束后，用Markdown格式总结并反馈操作结果（成功或失败及解决方案）。
 
 3. **数据要求**  
@@ -227,8 +228,20 @@ class WeBotAgent:
             )
         )
 
-    def chat(self, message):  # -> List[HumanMessage|AIMessage|ToolMessage]:
+    def chat(self, message: Dict[str, List[BaseMessage | dict]]):  # -> List[HumanMessage|AIMessage|ToolMessage]:
         return self.agent.stream(message, stream_mode=['updates'], config={"configurable": {"thread_id": 42}})
         # result = self.agent.invoke(message, config={"configurable": {"thread_id": 42}})
         # return result.get('messages')
 
+
+if __name__ == '__main__':
+    agent = WeBotAgent(model_name='deepseek_v3')
+    result = agent.chat({
+        "messages": [
+            HumanMessage(content="看下'人生何处不青山'今天中午到现在都在聊些什么")
+        ]
+    })
+
+    for item in result:
+        print(item)
+        print('-----')
