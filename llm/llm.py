@@ -80,3 +80,16 @@ class LLMFactory:
             *args,
             **kwargs,
         )
+
+    @staticmethod
+    def deepseek_v3_llm(model="deepseek-chat", *args, **kwargs):
+        api_key = getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise MissingApiKeyError("DEEPSEEK_API_KEY is not set, please set it in .env file")
+        return ChatOpenAI(
+            model=model,
+            base_url="https://api.deepseek.com",
+            api_key=SecretStr(api_key),
+            *args,
+            **kwargs,
+        )
