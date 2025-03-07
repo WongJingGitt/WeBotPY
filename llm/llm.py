@@ -11,6 +11,7 @@ from llm.llm_types import MissingApiKeyError
 load_dotenv()
 
 
+# TODO: 定义了模型数据库，现在需要重新设计LLM，动态获取模型配置，然后动态创建LLM
 class LLMFactory:
 
     @staticmethod
