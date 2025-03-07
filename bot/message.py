@@ -255,7 +255,3 @@ class TextMessageFromDB:
             "BytesExtra": self.BytesExtra,
             "BytesTrans": self.BytesTrans
         }
-
-
-if __name__ == '__main__':
-    pass

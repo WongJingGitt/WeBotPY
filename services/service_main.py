@@ -24,20 +24,20 @@ from requests import post as http_post
 
 
 class ServiceMain(Flask):
-
     """
     后端服务类，用作处理自定义逻辑，在WXHOOK原生请求之外加一层服务来实现一些自定义逻辑。
     """
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, import_name=__name__, static_url_path="/", static_folder=path.join(ROOT_PATH, 'static'))
+        super().__init__(*args, **kwargs, import_name=__name__, static_url_path="/",
+                         static_folder=path.join(ROOT_PATH, 'static'))
         self.config['TIMEOUT'] = 300
         CORS(self)
         self._bot: BotStorage = BotStorage()
         self._latest_bot: WeBot | None = None
         self._event = Event()
         self._conversions_database = ConversationsDatabase()
-        self.socketio = SocketIO(self, path='/api/ai/stream', cors_allowed_origins="http://localhost:3000")
+        self.socketio = SocketIO(self, path='/api/ai/stream', cors_allowed_origins=['http://127.0.0.1:16001', 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:16001'])
         self.socketio.init_app(self)
 
     def after_request(self, f):
@@ -181,8 +181,6 @@ class ServiceMain(Flask):
         _bot_object = _bot.get('object')
         _bot_info = _bot.get('info')
 
-
-
         try:
             with open(path.join(CONFIG_PATH, 'function_tools.json'), 'r', encoding='utf-8') as f:
                 tools = loads(f.read())
@@ -211,7 +209,8 @@ class ServiceMain(Flask):
                 conversation_id=conversation_id,
                 role="user",
                 content=body.body.get('messages')[-1].get('content'),
-                timestamp=datetime.fromtimestamp(body.body.get('messages')[-1].get('createAt') / 1000).strftime("%Y-%m-%d %H:%M:%S"),
+                timestamp=datetime.fromtimestamp(body.body.get('messages')[-1].get('createAt') / 1000).strftime(
+                    "%Y-%m-%d %H:%M:%S"),
                 visible=1,
                 wechat_message_config=None,
                 message_id=body.body.get('messages')[-1].get('message_id')
@@ -296,7 +295,7 @@ class ServiceMain(Flask):
 
         try:
             agent = WeBotAgent(
-                mode_name="gemini-2.0-flash-exp",
+                model_name=body.body.get('model', "glm-4-flash"),
                 llm_options={
                     "temperature": 0.1,
                     "top_p": 0.1
@@ -333,11 +332,30 @@ class ServiceMain(Flask):
             )
 
             for event, message in agent.chat({"messages": body.body.get('messages')}):
-                result = message.get('agent')
-                if not result:
+                update_message = message.get('agent')
+                print('---------')
+                print(event, message)
+                print('---------')
+                if not update_message:
                     continue
 
-                result = result.get('messages')[0].content
+                result = update_message.get('messages')[0].content
+                function_call = update_message.get('messages')[0].additional_kwargs.get('tool_calls', [{'function': {"name"}}])
+
+                if result.strip() == '' and function_call[0].get('function').get('name') is not None:
+                    function_name = function_call[0].get('function').get('name')
+                    result = {
+                        "get_current_time": "正在获取当前时间，进行时间推断。",
+                        "get_contact": '正在搜寻联系人',
+                        "get_user_info": '正在获取当前登录用户信息',
+                        "get_message_by_wxid_and_time": '正在获取聊天记录',
+                        "send_text_message": '正在发送消息中',
+                        "export_message": '正在导出聊天记录'
+                    }.get(function_name, "正在思考中...")
+
+                if result == '':
+                    result = '正在思考中...'
+
                 response_message_id = str(uuid4())
                 response_message_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -369,9 +387,6 @@ class ServiceMain(Flask):
             traceback.print_exc()
             emit('chat_message', response.json)
             disconnect()
-
-
-
 
     def register_socketio_events(self):
         self.socketio.on('connect', namespace='/api/ai/stream')(self._handle_connect)

@@ -1,10 +1,10 @@
+import re
 from datetime import datetime
 from typing import List, Dict, Any
 
 from langchain_core.tools import StructuredTool
 from requests import post
 
-from bot.message import MessageType
 from bot.write_doc import write_txt
 from tool_call.tools_types import CurrentTimeResult, GetContentInput, ContentResult, UserInfoResult, GetUserInfoInput, \
     GetMessageByWxidAndTimeInput, SendTextMessageInput
@@ -19,16 +19,18 @@ def get_current_time() -> CurrentTimeResult:
         "current_timezone": str(now.astimezone().tzinfo),
     })
 
+
 def get_db_info(port: int) -> List[Dict[str, Any]]:
     return post(f'http://127.0.0.1:{port}/api/getDBInfo').json().get('data')
+
 
 def get_micro_msg_handle(port: int):
     [micro_msg_database] = [item for item in get_db_info(port) if item.get('databaseName') == "MicroMsg.db"]
     return micro_msg_database.get('handle')
 
+
 def get_msg_handle(port: int):
-    [msg_database] = [item for item in get_db_info(port) if item.get('databaseName') == 'MSG0.db']
-    return msg_database.get('handle')
+    return [item.get('handle') for item in get_db_info(port) if re.match(r'^MSG\d+\.db$', item.get('databaseName'))]
 
 
 def get_contact(port, keyword) -> List[ContentResult]:
@@ -76,6 +78,7 @@ def get_user_info(port) -> UserInfoResult:
         wxid=result.get('wxid')
     )
 
+
 def get_message_by_wxid_and_time(wxid, port, start_time, end_time):
     port = int(port)
     return write_txt(
@@ -89,6 +92,21 @@ def get_message_by_wxid_and_time(wxid, port, start_time, end_time):
         file_type=None
     )
 
+
+def export_message(wxid, port, start_time, end_time):
+    port = int(port)
+    return write_txt(
+        msg_db_handle=get_msg_handle(port),
+        micro_msg_db_handle=get_micro_msg_handle(port),
+        wxid=wxid,
+        port=port,
+        start_time=start_time,
+        end_time=end_time,
+        endswith_txt=True,
+        file_type='json'
+    )
+
+
 def send_text_message(port, wxid, message):
     port = int(port)
     return post(
@@ -98,6 +116,7 @@ def send_text_message(port, wxid, message):
             "msg": message
         }
     ).json()
+
 
 ALL_TOOLS = [
     StructuredTool.from_function(
@@ -164,9 +183,14 @@ ALL_TOOLS = [
     - `code`: 返回状态,不为0代表发送成功, 0代表发送失败
     - `result`: 成功提示
 """
+    ),
+    StructuredTool.from_function(
+        name="export_message",
+        func=export_message,
+        args_schema=GetMessageByWxidAndTimeInput,
+        description="""
+一个用作导出聊天记录文件的工具函数，传入wxid与时间范围，将聊天记录导出为txt文件保存在本地，并且返回文件的绝对路径
+"""
     )
 ]
 
-
-if __name__ == '__main__':
-    print(ALL_TOOLS[1].args_schema.model_fields['port'])
