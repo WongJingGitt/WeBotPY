@@ -176,6 +176,7 @@ class TaskExecutorAgent:
 class WeBotAgent:
 
     def __init__(self, model_name: str = "glm-4-flash", llm_options: dict = {}, webot_port: int = 19001):
+        # TODO: 增加了模型数据库，需要优化这里的逻辑
         self.llm = {
             "glm-4-flash": LLMFactory.glm_llm(**llm_options),
             "gemini-2.0-flash-exp": LLMFactory.gemini_llm(**llm_options),
