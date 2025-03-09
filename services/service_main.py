@@ -14,6 +14,7 @@ from bot.webot import WeBot
 from utils.chat_glm import chat_with_function_tools as chat_with_glm
 from bot.bot_storage import BotStorage
 from services.service_conversations import ServiceConversations
+from services.service_llm import ServiceLLM
 from databases.conversation_database import ConversationsDatabase
 from agent.agent import WeBotAgent
 
@@ -297,6 +298,7 @@ class ServiceMain(Flask):
             agent = WeBotAgent(
                 model_name=body.body.get('model', "glm-4-flash"),
                 llm_options={
+                    **body.body.get('llm_options', {}),
                     "temperature": 0.1,
                     "top_p": 0.1
                 },
@@ -332,6 +334,7 @@ class ServiceMain(Flask):
             )
 
             for event, message in agent.chat({"messages": body.body.get('messages')}):
+                # TODO: 需要把所有的消息都储存并且发送给前端，包括ToolMessage
                 update_message = message.get('agent')
                 print('---------')
                 print(event, message)
@@ -410,6 +413,7 @@ class ServiceMain(Flask):
         for route in self._route_map:
             self.add_url_rule(**route)
         self.register_blueprint(ServiceConversations())
+        self.register_blueprint(ServiceLLM())
         self.register_socketio_events()
         super().run(port=port, *args, **kwargs)
 

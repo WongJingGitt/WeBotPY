@@ -51,6 +51,13 @@ class Request:
                     return False
         return True
 
+    @property
+    def check_query(self):
+        if self.query_keys:
+            for item in self.query_keys:
+                if item not in self.query or not self.query.get(item):
+                    return False
+        return True
 
 @dataclass
 class Router:
