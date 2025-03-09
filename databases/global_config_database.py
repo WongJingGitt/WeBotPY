@@ -1,7 +1,7 @@
 from databases.local_database import LocalDatabase
 
 
-class GlobalConfigDatabase(LocalDatabase):
+class LLMConfigDatabase(LocalDatabase):
 
     def __init__(self, db_name="global_config", *args, **kwargs):
         super().__init__(db_name=db_name, *args, **kwargs)
@@ -75,7 +75,7 @@ class GlobalConfigDatabase(LocalDatabase):
         :return: 包含（模型名称, APIKEY, 描述）的元组列表
         """
         result = self.execute_query("""
-        SELECT m.model_name, a.apikey, m.description
+        SELECT m.model_id, m.model_format_name, m.model_name, a.apikey, m.description, m.base_url
         FROM model_list m
         LEFT JOIN apikey_list a ON m.apikey_id = a.apikey_id
         """)
@@ -101,7 +101,7 @@ class GlobalConfigDatabase(LocalDatabase):
         :return: 包含（APIKEY, 描述）的元组列表
         """
         result = self.execute_query("""
-        SELECT apikey, description 
+        SELECT apikey_id, apikey, description 
         FROM apikey_list
         """)
         return result.fetchall()
