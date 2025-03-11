@@ -1,6 +1,6 @@
 import traceback
 from datetime import datetime
-from json import loads
+from json import loads, dumps
 from threading import Thread, Event
 from os import path
 from typing import List, Dict, Callable
@@ -18,7 +18,7 @@ from services.service_llm import ServiceLLM
 from databases.conversation_database import ConversationsDatabase
 from agent.agent import WeBotAgent
 
-from flask import Flask, request, has_request_context, send_file
+from flask import Flask, request, has_request_context, send_file, stream_with_context, Response as FlaskResponse
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, disconnect
 from requests import post as http_post
@@ -264,6 +264,161 @@ class ServiceMain(Flask):
     def _handle_disconnect(self):
         print('Client disconnected from /api/ai/stream')
 
+    def _ai_stream(self):
+        body = request.json
+        port = body.get('port')
+        messages = body.get('messages', [])
+        _bot = self._bot.get_bot(port)
+        conversation_id = self._create_conversation(body, _bot)
+        self._conversions_database.add_message(
+            conversation_id=conversation_id,
+            role="user",
+            content=messages[-1].get('content'),
+            timestamp=datetime.fromtimestamp(messages[-1].get('createAt', datetime.now().timestamp() * 1000) / 1000).strftime("%Y-%m-%d %H:%M:%S"),
+            visible=1,
+            wechat_message_config=dumps({"model": body.get('model', "glm-4-flash")}),
+        )
+        def event_stream():
+            # 初始化响应流
+            yield "data: 开始AI处理流程...\n\n"
+            
+            try:
+                agent = WeBotAgent(
+                    model_name=body.get('model', "glm-4-flash"),
+                    webot_port=port,
+                    llm_options={"apikey": body.get('apikey', ""), "base_url": body.get("base_url")}
+                )
+                
+                # 流式处理AI响应
+                for event, message in agent.chat({"messages": messages}):
+                    chunk = self._process_message_chunk(message, conversation_id)
+                    if chunk:
+                        yield f"data: {chunk}\n\n"
+                        
+                yield "data: [DONE]\n\n"
+                
+            except Exception as e:
+                yield f"data: 错误：{str(e)}\n\n"
+
+        return FlaskResponse(
+            stream_with_context(event_stream()),
+            mimetype="text/event-stream",
+            headers={'X-Accel-Buffering': 'no'}  # 禁用Nginx缓冲
+        )
+
+    def _create_conversation(self, body, _bot):
+        """创建新对话记录"""
+        if not body.get('conversation_id'):
+            start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            return self._conversions_database.add_conversation(
+                user_id=_bot.get('info').get('wxid'),
+                start_time=start_time,
+                summary=f"新对话 {start_time}"
+            )
+        return body['conversation_id']
+
+    def _process_message_chunk(self, message, conversation_id):
+        results = []
+
+        def get_timestamp():
+            return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        if 'agent' in message:
+            for msg in message['agent']['messages']:
+                message_id = str(uuid4())
+                
+                # 使用getattr判断tool_calls是否存在且非空
+                tool_calls = []
+                if getattr(msg, 'tool_calls', None):
+                    try:
+                        print(msg)
+                        tool_calls = [{
+                            "call_id": tc.get('id'),
+                            "tool_name": tc.get('function').get('name'),
+                            "parameters": tc.get('function').get('arguments'),
+                            "timestamp": get_timestamp(),
+                            "type": 'tool_call'
+                        } for tc in msg.additional_kwargs.get('tool_calls', [])]
+                    except Exception as e:
+                        print(f"Tool call解析失败: {e}")
+
+                # 保存agent消息及其工具调用信息
+                self._save_message(
+                    cid=conversation_id,
+                    content=msg.content,
+                    role='assistant' if len(tool_calls) == 0 else 'tool_call',
+                    message_id=message_id,
+                    wechat_message_config=dumps({
+                        'tools': tool_calls,
+                        "type": 'tool_call' if len(tool_calls) > 0 else 'assistant'
+                    })
+                )
+
+                results.append({
+                    "message_id": message_id,
+                    "conversation_id": conversation_id,
+                    "timestamp": get_timestamp(),
+                    "content": msg.content,
+                    'role': 'assistant' if len(tool_calls) == 0 else 'tool_call',
+                    "wechat_message_config": {
+                        'tools': tool_calls,
+                        "type": 'tool_call' if len(tool_calls) > 0 else 'assistant'
+                    }
+                })
+
+        elif 'tools' in message:
+            for msg in message['tools']['messages']:
+                message_id = str(uuid4())
+                
+                tool_result = {
+                    "call_id": msg.tool_call_id,
+                    "tool_name": msg.name,
+                    "result": msg.content,
+                    "success": True,  # 根据实际业务可调整判断逻辑
+                    "timestamp": get_timestamp(),
+                    "type": 'tool_result'
+                }
+
+                self._save_message(
+                    cid=conversation_id,
+                    content=msg.content,
+                    role='tool_result',
+                    message_id=message_id,
+                    wechat_message_config=dumps({
+                        "tools": tool_result,
+                        "type": 'tool_result'
+                    })
+                )
+
+                results.append({
+                    "message_id": message_id,
+                    "conversation_id": conversation_id,
+                    "timestamp": tool_result['timestamp'],
+                    'role': 'tool_result',
+                    'content': tool_result.get('result'),
+                    "wechat_message_config": dumps({
+                        "tools": tool_result,
+                        "type": 'tool_result'
+                    })
+                })
+
+        return dumps(results, ensure_ascii=False)
+
+
+
+    def _save_message(self, cid, content, role='assistant', wechat_message_config='', message_id=str(uuid4())):
+        """保存消息到数据库"""
+        self._conversions_database.add_message(
+            conversation_id=cid,
+            role=role,
+            content=content,
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            visible=1,
+            wechat_message_config=wechat_message_config,
+            message_id=message_id
+        )
+
+
     def _handle_chat_message(self, data):
         if not data:
             emit('chat_message', "")
@@ -406,7 +561,8 @@ class ServiceMain(Flask):
              "view_func": self._login_heartbeat},
             {"rule": "/api/bot/export_message_file", "endpoint": "export_message_file", "methods": ['POST'],
              "view_func": self._export_message_file},
-            {"rule": "/api/ai/chat", "endpoint": "ai_chat", "methods": ['POST'], "view_func": self._ai_chat}
+            {"rule": "/api/ai/chat", "endpoint": "ai_chat", "methods": ['POST'], "view_func": self._ai_chat},
+            {"rule": "/api/ai/stream", "endpoint": "ai_stream", "methods": ['POST'], "view_func": self._ai_stream}
         ]
 
     def run(self, port: int = 16001, *args, **kwargs):
