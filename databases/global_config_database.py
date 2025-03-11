@@ -31,10 +31,10 @@ class LLMConfigDatabase(LocalDatabase):
         _base_model_list = [
             {"model_name": "glm-4-flash", "description": "免费的模型，可以前往<Text link={{href: 'https://open.bigmodel.cn/', target: '__blank'}}>智谱开放平台</Text>申请APIKEY使用", "base_url": "https://open.bigmodel.cn/api/paas/v4/", "model_format_name": "GLM4 Flash"},
             {"model_name": "gemini-2.0-flash-exp", "description": "免费的模型，需要翻墙，可以前往<Text link={{href: 'https://aistudio.google.com/app/apikey', target: '__blank'}}>谷歌AI Studio</Text>申请APIKEY使用", "base_url": "null", "model_format_name": "Gemini 2.0 Flash"},
-            {"model_name": "qwen2.5", "description": "新用户赠送额度，可以前往<Text link={{href: 'https://bailian.console.aliyun.com/', target: '__blank'}}>阿里云百炼</Text>申请APIKEY使用", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model_format_name": "通义千问2.5"},
-            {"model_name": "deepseek_v3", "description": "新用户赠送额度，可以前往<Text link={{href: 'https://platform.deepseek.com/', target: '__blank'}}>DeepSeek官方开放平台</Text>申请APIKEY使用", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model_format_name": "DeepSeek V3(官方)"},
+            {"model_name": "qwen2.5-14b-instruct-1m", "description": "新用户赠送额度，可以前往<Text link={{href: 'https://bailian.console.aliyun.com/', target: '__blank'}}>阿里云百炼</Text>申请APIKEY使用", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model_format_name": "通义千问2.5"},
+            {"model_name": "deepseek-chat", "description": "新用户赠送额度，可以前往<Text link={{href: 'https://platform.deepseek.com/', target: '__blank'}}>DeepSeek官方开放平台</Text>申请APIKEY使用", "base_url": "https://api.deepseek.com", "model_format_name": "DeepSeek V3(官方)"},
             {"model_name": "doubao-1-5-pro-256k", "description": "新用户赠送额度，可以前往<Text link={{href: 'https://console.volcengine.com/ark', target: '__blank'}}>火山引擎</Text>申请APIKEY使用", "base_url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions", "model_format_name": "豆包1.5Pro 256K"},
-            {"model_name": "deepseek-v3", "description": "新用户赠送额度，可以前往<Text link={{href: 'https://console.volcengine.com/ark', target: '__blank'}}>火山引擎</Text>申请APIKEY使用", "base_url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions", "model_format_name": "DeepSeek V3(火山引擎)"},
+            {"model_name": "deepseek-v3-241226", "description": "新用户赠送额度，可以前往<Text link={{href: 'https://console.volcengine.com/ark', target: '__blank'}}>火山引擎</Text>申请APIKEY使用", "base_url": "https://ark.cn-beijing.volces.com/api/v3/", "model_format_name": "DeepSeek V3(火山引擎)"},
         ]
         for model in _base_model_list:
             if self.get_model_by_name(model.get("model_name")) is None:
