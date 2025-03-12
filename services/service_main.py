@@ -270,6 +270,7 @@ class ServiceMain(Flask):
         messages = body.get('messages', [])
         _bot = self._bot.get_bot(port)
         conversation_id = self._create_conversation(body, _bot)
+        user_message_id = str(uuid4())
         self._conversions_database.add_message(
             conversation_id=conversation_id,
             role="user",
@@ -277,6 +278,7 @@ class ServiceMain(Flask):
             timestamp=datetime.fromtimestamp(messages[-1].get('createAt', datetime.now().timestamp() * 1000) / 1000).strftime("%Y-%m-%d %H:%M:%S"),
             visible=1,
             wechat_message_config=dumps({"model": body.get('model', "glm-4-flash")}),
+            message_id=user_message_id
         )
         def event_stream():
             # 初始化响应流
@@ -288,10 +290,22 @@ class ServiceMain(Flask):
                     webot_port=port,
                     llm_options={"apikey": body.get('apikey', ""), "base_url": body.get("base_url")}
                 )
+
+                original_assistant_message = {
+                    "role": "assistant",
+                    "contant": "",
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "message_id": str(uuid4()),
+                    "wechat_message_config": {
+                        "pending": True,
+                        "tools": []
+                    },
+                    "conversation_id": conversation_id
+                }
                 
                 # 流式处理AI响应
                 for event, message in agent.chat({"messages": messages}):
-                    chunk = self._process_message_chunk(message, conversation_id)
+                    chunk = self._process_message_chunk(message, conversation_id, user_message_id=user_message_id, original_assistant_message=original_assistant_message)
                     if chunk:
                         yield f"data: {chunk}\n\n"
                         
@@ -317,7 +331,7 @@ class ServiceMain(Flask):
             )
         return body['conversation_id']
 
-    def _process_message_chunk(self, message, conversation_id):
+    def _process_message_chunk(self, message, conversation_id, user_message_id="", original_assistant_message={}):
         results = []
 
         def get_timestamp():
@@ -346,11 +360,12 @@ class ServiceMain(Flask):
                 self._save_message(
                     cid=conversation_id,
                     content=msg.content,
-                    role='assistant' if len(tool_calls) == 0 else 'tool_call',
+                    role='assistant' if len(tool_calls) == 0 else 'tools',
                     message_id=message_id,
                     wechat_message_config=dumps({
                         'tools': tool_calls,
-                        "type": 'tool_call' if len(tool_calls) > 0 else 'assistant'
+                        "type": 'tool_call' if len(tool_calls) > 0 else 'assistant',
+                        "user_message_id": user_message_id
                     })
                 )
 
@@ -359,11 +374,12 @@ class ServiceMain(Flask):
                     "conversation_id": conversation_id,
                     "timestamp": get_timestamp(),
                     "content": msg.content,
-                    'role': 'assistant' if len(tool_calls) == 0 else 'tool_call',
-                    "wechat_message_config": {
+                    'role': 'assistant' if len(tool_calls) == 0 else 'tools',
+                    "wechat_message_config": dumps({
                         'tools': tool_calls,
-                        "type": 'tool_call' if len(tool_calls) > 0 else 'assistant'
-                    }
+                        "type": 'tool_call' if len(tool_calls) > 0 else 'assistant',
+                        "user_message_id": user_message_id
+                    })
                 })
 
         elif 'tools' in message:
@@ -382,11 +398,12 @@ class ServiceMain(Flask):
                 self._save_message(
                     cid=conversation_id,
                     content=msg.content,
-                    role='tool_result',
+                    role='tools',
                     message_id=message_id,
                     wechat_message_config=dumps({
                         "tools": tool_result,
-                        "type": 'tool_result'
+                        "type": 'tool_result',
+                        "user_message_id": user_message_id
                     })
                 )
 
@@ -394,11 +411,12 @@ class ServiceMain(Flask):
                     "message_id": message_id,
                     "conversation_id": conversation_id,
                     "timestamp": tool_result['timestamp'],
-                    'role': 'tool_result',
+                    'role': 'tools',
                     'content': tool_result.get('result'),
                     "wechat_message_config": dumps({
                         "tools": tool_result,
-                        "type": 'tool_result'
+                        "type": 'tool_result',
+                        "user_message_id": user_message_id
                     })
                 })
 
