@@ -1,4 +1,5 @@
 from uuid import uuid4
+from json import dumps
 
 from databases.local_database import LocalDatabase
 
@@ -48,7 +49,7 @@ class ConversationsDatabase(LocalDatabase):
         return cursor.lastrowid
 
     def add_message(self, conversation_id: int, role: str, content: str, timestamp: str, visible: int = 1,
-                    wechat_message_config: str = None, message_id: str = None) -> str:
+                    wechat_message_config: str | dict = None, message_id: str = None) -> str:
         """
         添加消息
         :param message_id:
@@ -60,6 +61,7 @@ class ConversationsDatabase(LocalDatabase):
         :return: 新增消息的 message_id
         """
         message_id = message_id if message_id else str(uuid4())
+        wechat_message_config = wechat_message_config if isinstance(wechat_message_config, str) else dumps(wechat_message_config)
         query = """
             INSERT INTO ConversationMessages (conversation_id, role, content, timestamp, visible, wechat_message_config, message_id)
             VALUES (?, ?, ?, ?, ?, ?, ?)
