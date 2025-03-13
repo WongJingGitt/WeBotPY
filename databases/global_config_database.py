@@ -29,12 +29,12 @@ class LLMConfigDatabase(LocalDatabase):
 
     def _model_init(self):
         _base_model_list = [
-            {"model_name": "glm-4-flash", "description": "免费的模型，可以前往<Text link={{href: 'https://open.bigmodel.cn/', target: '__blank'}}>智谱开放平台</Text>申请APIKEY使用", "base_url": "https://open.bigmodel.cn/api/paas/v4/", "model_format_name": "GLM4 Flash"},
-            {"model_name": "gemini-2.0-flash-exp", "description": "免费的模型，需要翻墙，可以前往<Text link={{href: 'https://aistudio.google.com/app/apikey', target: '__blank'}}>谷歌AI Studio</Text>申请APIKEY使用", "base_url": "null", "model_format_name": "Gemini 2.0 Flash"},
-            {"model_name": "qwen2.5-14b-instruct-1m", "description": "新用户赠送额度，可以前往<Text link={{href: 'https://bailian.console.aliyun.com/', target: '__blank'}}>阿里云百炼</Text>申请APIKEY使用", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model_format_name": "通义千问2.5"},
-            {"model_name": "deepseek-chat", "description": "新用户赠送额度，可以前往<Text link={{href: 'https://platform.deepseek.com/', target: '__blank'}}>DeepSeek官方开放平台</Text>申请APIKEY使用", "base_url": "https://api.deepseek.com", "model_format_name": "DeepSeek V3(官方)"},
-            {"model_name": "doubao-1-5-pro-256k", "description": "新用户赠送额度，可以前往<Text link={{href: 'https://console.volcengine.com/ark', target: '__blank'}}>火山引擎</Text>申请APIKEY使用", "base_url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions", "model_format_name": "豆包1.5Pro 256K"},
-            {"model_name": "deepseek-v3-241226", "description": "新用户赠送额度，可以前往<Text link={{href: 'https://console.volcengine.com/ark', target: '__blank'}}>火山引擎</Text>申请APIKEY使用", "base_url": "https://ark.cn-beijing.volces.com/api/v3/", "model_format_name": "DeepSeek V3(火山引擎)"},
+            {"model_name": "glm-4-flash", "description": "免费的模型，可以前往<a href='https://open.bigmodel.cn/' target='__blank'>智谱开放平台</a>申请APIKEY使用", "base_url": "https://open.bigmodel.cn/api/paas/v4/", "model_format_name": "GLM4 Flash"},
+            {"model_name": "gemini-2.0-flash-exp", "description": "免费的模型，需要翻墙，可以前往<a href='https://aistudio.google.com/app/apikey' target='__blank'>谷歌AI Studio</a>申请APIKEY使用", "base_url": "null", "model_format_name": "Gemini 2.0 Flash"},
+            {"model_name": "qwen2.5-14b-instruct-1m", "description": "新用户赠送额度，可以前往<a href='https://bailian.console.aliyun.com/' target='__blank'>阿里云百炼</a>申请APIKEY使用", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model_format_name": "通义千问2.5"},
+            {"model_name": "deepseek-chat", "description": "新用户赠送额度，可以前往<a href='https://platform.deepseek.com/' target='__blank'>DeepSeek官方开放平台</a>申请APIKEY使用", "base_url": "https://api.deepseek.com", "model_format_name": "DeepSeek V3(官方)"},
+            {"model_name": "doubao-1-5-pro-256k", "description": "新用户赠送额度，可以前往<a href='https://console.volcengine.com/ark' target='__blank'>火山引擎</a>申请APIKEY使用", "base_url": "https://ark.cn-beijing.volces.com/api/v3/", "model_format_name": "豆包1.5Pro 256K"},
+            {"model_name": "deepseek-v3-241226", "description": "新用户赠送额度，可以前往<a href='https://console.volcengine.com/ark' target='__blank'>火山引擎</a>申请APIKEY使用", "base_url": "https://ark.cn-beijing.volces.com/api/v3/", "model_format_name": "DeepSeek V3(火山引擎)"}
         ]
         for model in _base_model_list:
             if self.get_model_by_name(model.get("model_name")) is None:
@@ -80,15 +80,26 @@ class LLMConfigDatabase(LocalDatabase):
         LEFT JOIN apikey_list a ON m.apikey_id = a.apikey_id
         """)
         return result.fetchall()
+    
+    def get_model_list(self) -> list:
+        """
+        获取所有模型列表，不包含明文APIKEY
+        :return: 包含（模型名称, 模型格式名称, 模型描述, 模型基础URL）的元组列表
+        """
+        result = self.execute_query("""
+        SELECT model_id, model_name, model_format_name, description, base_url, apikey_id
+        FROM model_list
+        """)
+        return result.fetchall()
 
     def get_model_by_id(self, model_id: int) -> tuple:
         """
         根据模型ID获取完整模型信息（包含关联的APIKEY明文）
         :param model_id: 需要查询的模型ID
-        :return: 包含完整信息的元组（model_id, model_format_name, model_name, base_url, apikey, description）
+        :return: 包含完整信息的元组（model_id, model_format_name, model_name, base_url, apikey, description, apikey_id）
         """
         result = self.execute_query("""
-        SELECT m.model_id, m.model_format_name, m.model_name, m.base_url, a.apikey, m.description
+        SELECT m.model_id, m.model_format_name, m.model_name, m.base_url, a.apikey, m.description, m.apikey_id
         FROM model_list m
         LEFT JOIN apikey_list a ON m.apikey_id = a.apikey_id
         WHERE m.model_id = ?
@@ -101,7 +112,7 @@ class LLMConfigDatabase(LocalDatabase):
         :return: 包含（APIKEY, 描述）的元组列表
         """
         result = self.execute_query("""
-        SELECT apikey_id, apikey, description 
+        SELECT apikey_id, description 
         FROM apikey_list
         """)
         return result.fetchall()
