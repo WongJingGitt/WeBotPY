@@ -16,11 +16,12 @@ from bot.bot_storage import BotStorage
 from services.service_conversations import ServiceConversations
 from services.service_llm import ServiceLLM
 from databases.conversation_database import ConversationsDatabase
+from databases.global_config_database import LLMConfigDatabase
 from agent.agent import WeBotAgent
 
 from flask import Flask, request, has_request_context, send_file, stream_with_context, Response as FlaskResponse
 from flask_cors import CORS
-from flask_socketio import SocketIO, emit, disconnect
+from flask_socketio import SocketIO
 from requests import post as http_post
 
 
@@ -38,8 +39,7 @@ class ServiceMain(Flask):
         self._latest_bot: WeBot | None = None
         self._event = Event()
         self._conversions_database = ConversationsDatabase()
-        self.socketio = SocketIO(self, path='/api/ai/stream', cors_allowed_origins=['http://127.0.0.1:16001', 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:16001'])
-        self.socketio.init_app(self)
+        self._llm_config_database = LLMConfigDatabase()
 
     def after_request(self, f):
         """
@@ -160,135 +160,48 @@ class ServiceMain(Flask):
             response.code = 500
             response.message = str(e)
             return response.json
-
-    def _ai_chat(self):
-        body = Request(body=request.json, body_keys=['port', 'messages'])
-        response = Response(code=200, message='success', data=None)
-        if not body.check_body:
-            response.code = 400
-            response.message = "参数错误，可能是微信未启动。  \n请先点击左侧 **登录微信** 按钮启动微信，并且登录。" if not body.body.get(
-                'port') else '参数缺失'
-            return response.json
-
-        port = body.body.get('port')
-
-        _bot = self._bot.get_bot(port)
-
-        if not _bot:
-            response.code = 400
-            response.message = '未找到对应端口的机器人'
-            return response.json
-
-        _bot_object = _bot.get('object')
-        _bot_info = _bot.get('info')
-
-        try:
-            with open(path.join(CONFIG_PATH, 'function_tools.json'), 'r', encoding='utf-8') as f:
-                tools = loads(f.read())
-            today = datetime.now().strftime("%Y-%m-%d")
-            time_now = datetime.now().strftime("%H:%M:%S")
-            week_day = datetime.now().strftime("%A")
-
-            conversation_id = body.body.get('conversation_id')
-
-            summary = None
-            start_time = None
-            new_conversation = False
-
-            if not conversation_id:
-                start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                summary = f"新对话 {start_time}"
-                conversation_id = self._conversions_database.add_conversation(
-                    user_id=_bot_info.get('wxid'),
-                    start_time=start_time,
-                    summary=summary
-                )
-                new_conversation = True
-
-            conversation_id = int(conversation_id)
-            self._conversions_database.add_message(
-                conversation_id=conversation_id,
-                role="user",
-                content=body.body.get('messages')[-1].get('content'),
-                timestamp=datetime.fromtimestamp(body.body.get('messages')[-1].get('createAt') / 1000).strftime(
-                    "%Y-%m-%d %H:%M:%S"),
-                visible=1,
-                wechat_message_config=None,
-                message_id=body.body.get('messages')[-1].get('message_id')
-            )
-
-            result = chat_with_glm(
-                ask_message=body.body.get('messages'),
-                prompt=f"""
-            你是一个微信机器人助手，你的职责如下：
-            - 今天是`{today}，现在是北京时间`{time_now}，`{week_day}`。
-            - 用户的名字是`{_bot_info.get('name')}`，所以聊天记录中的`{_bot_info.get('name')}`是用户自己。
-            - 总结用户的聊天内容，并给出回答；
-            - 分析用户的需求，按需调用tools函数；
-            - 当涉及到转发内容时，请先判断用户是否有指定原文，如果有原文：请你务必转发原文，不要篡改任何内容；
-            """,
-                function_tools=tools,
-                _bot=_bot_object,
-                conversation_id=conversation_id
-            )
-
-            response.data = {
-                "message": result,
-                "conversation_id": conversation_id,
-                "new_conversation": new_conversation,
-                "start_time": start_time,
-                "summary": summary
-            }
-
-            self._conversions_database.add_message(
-                conversation_id=conversation_id,
-                role="assistant",
-                content=result,
-                timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                visible=1,
-                wechat_message_config=None,
-                message_id=body.body.get('assistant_id')
-            )
-
-            return response.json
-
-        except Exception as e:
-            response.code = 500
-            response.message = str(e)
-            traceback.print_exc()
-            return response.json
-
-    def _handle_connect(self):
-        print('Client connected to /api/ai/stream')
-
-    def _handle_disconnect(self):
-        print('Client disconnected from /api/ai/stream')
-
+   
     def _ai_stream(self):
         body = request.json
         port = body.get('port')
-        messages = body.get('messages', [])
+        message = body.get('message', '')
+
+        model_result = self._llm_config_database.get_model_by_id(body.get('model_id'))
+        if not model_result:
+            return Response(code=400, message='模型不存在', data=None).json
+
+        model_id, model_format_name, model_name, base_url, apikey, description, apikey_id = model_result
+        
+        if not apikey:
+            return Response(code=400, message='apikey不存在', data=None).json
+
         _bot = self._bot.get_bot(port)
+
         conversation_id = self._create_conversation(body, _bot)
         user_message_id = str(uuid4())
+
         self._conversions_database.add_message(
             conversation_id=conversation_id,
             role="user",
-            content=messages[-1].get('content'),
-            timestamp=datetime.fromtimestamp(messages[-1].get('createAt', datetime.now().timestamp() * 1000) / 1000).strftime("%Y-%m-%d %H:%M:%S"),
+            content=message,
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             visible=1,
             wechat_message_config=dumps({"model": body.get('model', "glm-4-flash")}),
             message_id=user_message_id
         )
+
+        all_messages = self._conversions_database.get_messages(conversation_id)
+        all_messages = [{ "role": "user" if _message.get('role') == 'user' else 'assistant', "content": _message.get('content')  } for _message in all_messages if _message.get('content')]
+        print(all_messages)
         def event_stream():
             # 初始化响应流
             yield "data: 开始AI处理流程...\n\n"
             
             try:
                 agent = WeBotAgent(
-                    model_name=body.get('model', "glm-4-flash"),
+                    model_name=model_name,
                     webot_port=port,
-                    llm_options={"apikey": body.get('apikey', ""), "base_url": body.get("base_url")}
+                    llm_options={"apikey": apikey, "base_url": base_url},
                 )
 
                 original_assistant_message = {
@@ -304,13 +217,14 @@ class ServiceMain(Flask):
                 }
                 
                 # 流式处理AI响应
-                for event, message in agent.chat({"messages": messages}):
+                for event, message in agent.chat({"messages": all_messages}):
                     chunk = self._process_message_chunk(message, conversation_id, user_message_id=user_message_id, original_assistant_message=original_assistant_message)
                     if chunk:
                         yield f"data: {chunk}\n\n"
                         
                 yield "data: [DONE]\n\n"
-                
+            except GeneratorExit as ge:
+                raise ge
             except Exception as e:
                 yield f"data: 错误：{str(e)}\n\n"
 
@@ -345,7 +259,6 @@ class ServiceMain(Flask):
                 tool_calls = []
                 if getattr(msg, 'tool_calls', None):
                     try:
-                        print(msg)
                         tool_calls = [{
                             "call_id": tc.get('id'),
                             "tool_name": tc.get('function').get('name'),
@@ -422,8 +335,6 @@ class ServiceMain(Flask):
 
         return dumps(results, ensure_ascii=False)
 
-
-
     def _save_message(self, cid, content, role='assistant', wechat_message_config='', message_id=str(uuid4())):
         """保存消息到数据库"""
         self._conversions_database.add_message(
@@ -437,138 +348,6 @@ class ServiceMain(Flask):
         )
 
 
-    def _handle_chat_message(self, data):
-        if not data:
-            emit('chat_message', "")
-            disconnect()
-            return
-
-        body = Request(body=data, body_keys=['port', 'messages'])
-
-        response = Response(code=200, message='success', data=None)
-
-        if not body.check_body:
-            response.code = 400
-            response.message = "参数错误，可能是微信未启动。  \n请先点击左侧 **登录微信** 按钮启动微信，并且登录。" if not body.body.get(
-                'port') else '参数缺失'
-            emit('chat_message', response.json)
-            disconnect()
-            return
-
-        port = body.body.get('port')
-
-        _bot = self._bot.get_bot(port)
-
-        if not _bot:
-            response.code = 400
-            response.message = '未找到对应端口的机器人'
-            return response.json
-
-        _bot_object = _bot.get('object')
-        _bot_info = _bot.get('info')
-
-        try:
-            agent = WeBotAgent(
-                model_name=body.body.get('model', "glm-4-flash"),
-                llm_options={
-                    **body.body.get('llm_options', {}),
-                    "temperature": 0.1,
-                    "top_p": 0.1
-                },
-                webot_port=port
-            )
-
-            conversation_id = body.body.get('conversation_id')
-
-            summary = None
-            start_time = None
-            new_conversation = False
-
-            if not conversation_id:
-                start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                summary = f"新对话 {start_time}"
-                conversation_id = self._conversions_database.add_conversation(
-                    user_id=_bot_info.get('wxid'),
-                    start_time=start_time,
-                    summary=summary
-                )
-                new_conversation = True
-
-            conversation_id = int(conversation_id)
-            self._conversions_database.add_message(
-                conversation_id=conversation_id,
-                role="user",
-                content=body.body.get('messages')[-1].get('content'),
-                timestamp=datetime.fromtimestamp(body.body.get('messages')[-1].get('createAt') / 1000).strftime(
-                    "%Y-%m-%d %H:%M:%S"),
-                visible=1,
-                wechat_message_config=None,
-                message_id=body.body.get('messages')[-1].get('message_id')
-            )
-
-            for event, message in agent.chat({"messages": body.body.get('messages')}):
-                # TODO: 需要把所有的消息都储存并且发送给前端，包括ToolMessage
-                update_message = message.get('agent')
-                print('---------')
-                print(event, message)
-                print('---------')
-                if not update_message:
-                    continue
-
-                result = update_message.get('messages')[0].content
-                function_call = update_message.get('messages')[0].additional_kwargs.get('tool_calls', [{'function': {"name"}}])
-
-                if result.strip() == '' and function_call[0].get('function').get('name') is not None:
-                    function_name = function_call[0].get('function').get('name')
-                    result = {
-                        "get_current_time": "正在获取当前时间，进行时间推断。",
-                        "get_contact": '正在搜寻联系人',
-                        "get_user_info": '正在获取当前登录用户信息',
-                        "get_message_by_wxid_and_time": '正在获取聊天记录',
-                        "send_text_message": '正在发送消息中',
-                        "export_message": '正在导出聊天记录'
-                    }.get(function_name, "正在思考中...")
-
-                if result == '':
-                    result = '正在思考中...'
-
-                response_message_id = str(uuid4())
-                response_message_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                response.data = {
-                    "message": result,
-                    "conversation_id": conversation_id,
-                    "new_conversation": new_conversation,
-                    "start_time": start_time,
-                    "summary": summary,
-                    "message_id": response_message_id,
-                    "message_time": response_message_time
-                }
-
-                self._conversions_database.add_message(
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    content=result,
-                    timestamp=response_message_time,
-                    visible=1,
-                    wechat_message_config=None,
-                    message_id=response_message_id
-                )
-                emit('chat_message', response.json)
-            disconnect()
-            return
-        except Exception as e:
-            response.code = 500
-            response.message = str(e)
-            traceback.print_exc()
-            emit('chat_message', response.json)
-            disconnect()
-
-    def register_socketio_events(self):
-        self.socketio.on('connect', namespace='/api/ai/stream')(self._handle_connect)
-        self.socketio.on('disconnect', namespace='/api/ai/stream')(self._handle_disconnect)
-        self.socketio.on('chat_message', namespace='/api/ai/stream')(self._handle_chat_message)
-
     @property
     def _route_map(self) -> List[Dict[str, Callable | str]]:
         return [
@@ -579,7 +358,6 @@ class ServiceMain(Flask):
              "view_func": self._login_heartbeat},
             {"rule": "/api/bot/export_message_file", "endpoint": "export_message_file", "methods": ['POST'],
              "view_func": self._export_message_file},
-            {"rule": "/api/ai/chat", "endpoint": "ai_chat", "methods": ['POST'], "view_func": self._ai_chat},
             {"rule": "/api/ai/stream", "endpoint": "ai_stream", "methods": ['POST'], "view_func": self._ai_stream}
         ]
 
@@ -588,7 +366,6 @@ class ServiceMain(Flask):
             self.add_url_rule(**route)
         self.register_blueprint(ServiceConversations())
         self.register_blueprint(ServiceLLM())
-        self.register_socketio_events()
         super().run(port=port, *args, **kwargs)
 
 
