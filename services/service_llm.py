@@ -72,8 +72,8 @@ class ServiceLLM(Blueprint):
         """获取所有模型列表（含APIKEY）"""
         _response = Response(code=200, message='success', data=None)
         try:
-            models = self._db.get_model_list_with_apikey()
-            _response.data = [dict(zip(['model_id', 'model_format_name', 'model_name', 'apikey', 'description', 'base_url'], m)) for m in models]
+            models = self._db.get_model_list()
+            _response.data = [dict(zip(["model_id","model_name", "model_format_name", "description", "base_url", "apikey_id"], m)) for m in models]
         except Exception as e:
             _response.code = 500
             _response.message = f'查询失败: {str(e)}'
@@ -84,10 +84,12 @@ class ServiceLLM(Blueprint):
         _response = Response(code=200, message='success', data=None)
         model = self._db.get_model_by_id(model_id)
         if model:
-            _response.data = dict(zip(
-                ['model_id', 'model_format_name', 'model_name', 'base_url', 'apikey', 'description'],
+            result = dict(zip(
+                ['model_id', 'model_format_name', 'model_name', 'base_url', 'apikey', 'description', 'apikey_id'],
                 model
             ))
+            result.pop('apikey')
+            _response.data = result
         else:
             _response.code = 404
             _response.message = '模型不存在'
@@ -145,7 +147,7 @@ class ServiceLLM(Blueprint):
         _response = Response(code=200, message='success', data=None)
         try:
             keys = self._db.get_apikey_list()
-            _response.data = [dict(zip(['apikey_id', 'apikey', 'description'], k)) for k in keys]
+            _response.data = [dict(zip(['apikey_id', 'description'], k)) for k in keys]
         except Exception as e:
             _response.code = 500
             _response.message = f'查询失败: {str(e)}'
