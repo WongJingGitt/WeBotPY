@@ -1,3 +1,4 @@
+from typing import Union
 from services.service_type import Response, Request
 from databases.global_config_database import LLMConfigDatabase
 
@@ -13,21 +14,21 @@ class ServiceLLM(Blueprint):
 
 
     @property
-    def _route_map(self) -> list[dict[str, callable or str]]:
+    def _route_map(self) -> list[dict[str, Union[callable, str]]]:
         return [
             {'rule': '/api/model/model/add','view_func': self._add_model,'methods': ['POST'], 'endpoint': 'add_model'},
             {'rule': '/api/model/apikey/add','view_func': self._add_apikey,'methods': ['POST'], 'endpoint': 'add_apikey'},
             {'rule': '/api/models', 'view_func': self._get_models, 'methods': ['GET'], 'endpoint': 'get_models'},
             {'rule': '/api/model/<int:model_id>', 'view_func': self._get_model, 'methods': ['GET'],
              'endpoint': 'get_model'},
-            {'rule': '/api/model/update', 'view_func': self._update_model, 'methods': ['PUT'],
+            {'rule': '/api/model/update', 'view_func': self._update_model, 'methods': ['POST'],
              'endpoint': 'update_model'},
-            {'rule': '/api/model/delete', 'view_func': self._delete_model, 'methods': ['DELETE'],
+            {'rule': '/api/model/delete', 'view_func': self._delete_model, 'methods': ['POST'],
              'endpoint': 'delete_model'},
             {'rule': '/api/apikeys', 'view_func': self._get_apikeys, 'methods': ['GET'], 'endpoint': 'get_apikeys'},
-            {'rule': '/api/apikey/delete', 'view_func': self._delete_apikey, 'methods': ['DELETE'],
+            {'rule': '/api/apikey/delete', 'view_func': self._delete_apikey, 'methods': ['POST'],
              'endpoint': 'delete_apikey'},
-            {'rule': '/api/apikey/update', 'view_func': self._update_apikey_desc, 'methods': ['PUT'],
+            {'rule': '/api/apikey/update', 'view_func': self._update_apikey_desc, 'methods': ['POST'],
              'endpoint': 'update_apikey_desc'},
         ]
 
@@ -155,16 +156,16 @@ class ServiceLLM(Blueprint):
 
     def _delete_apikey(self):
         """删除指定APIKEY"""
-        _request = Request(body=request.json, body_keys=['apikey'])
+        _request = Request(body=request.json, body_keys=['apikey_id'])
         _response = Response(code=200, message='删除成功', data=None)
 
         if not _request.check_body:
             _response.code = 400
-            _response.message = '需要apikey参数'
+            _response.message = '需要apikey_id参数'
             return _response.json
 
         try:
-            self._db.delete_apikey(_request.body['apikey'])
+            self._db.delete_apikey_by_id(_request.body['apikey_id'])
         except Exception as e:
             _response.code = 500
             _response.message = f'删除失败: {str(e)}'
@@ -173,7 +174,7 @@ class ServiceLLM(Blueprint):
 
     def _update_apikey_desc(self):
         """更新APIKEY描述"""
-        _request = Request(body=request.json, body_keys=['apikey', 'description'])
+        _request = Request(body=request.json, body_keys=['apikey_id', 'description'])
         _response = Response(code=200, message='更新成功', data=None)
 
         if not _request.check_body:
@@ -183,7 +184,7 @@ class ServiceLLM(Blueprint):
 
         try:
             self._db.update_apikey_description(
-                _request.body['apikey'],
+                _request.body['apikey_id'],
                 _request.body['description']
             )
         except Exception as e:
