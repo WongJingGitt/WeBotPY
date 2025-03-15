@@ -189,7 +189,7 @@ ALL_TOOLS = [
         func=export_message,
         args_schema=GetMessageByWxidAndTimeInput,
         description="""
-一个用作导出聊天记录文件的工具函数，传入wxid与时间范围，将聊天记录导出为txt文件保存在本地，并且返回文件的绝对路径
+一个用作导出聊天记录文件的工具函数，传入wxid与时间范围，将聊天记录导出为txt文件保存在本地，并且返回文件的绝对路径。**注意：只有用户明确表明了”导出/提取/保存/下载“相关的意图时才可以调用这个工具。**
 """
     )
 ]
