@@ -33,7 +33,7 @@ class LLMConfigDatabase(LocalDatabase):
             {"model_name": "gemini-2.0-flash-exp", "description": "免费的模型，需要翻墙，可以前往<a href='https://aistudio.google.com/app/apikey' target='__blank'>谷歌AI Studio</a>申请APIKEY使用", "base_url": "null", "model_format_name": "Gemini 2.0 Flash"},
             {"model_name": "qwen2.5-14b-instruct-1m", "description": "新用户赠送额度，可以前往<a href='https://bailian.console.aliyun.com/' target='__blank'>阿里云百炼</a>申请APIKEY使用", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model_format_name": "通义千问2.5"},
             {"model_name": "deepseek-chat", "description": "新用户赠送额度，可以前往<a href='https://platform.deepseek.com/' target='__blank'>DeepSeek官方开放平台</a>申请APIKEY使用", "base_url": "https://api.deepseek.com", "model_format_name": "DeepSeek V3(官方)"},
-            {"model_name": "doubao-1-5-pro-256k", "description": "新用户赠送额度，可以前往<a href='https://console.volcengine.com/ark' target='__blank'>火山引擎</a>申请APIKEY使用", "base_url": "https://ark.cn-beijing.volces.com/api/v3/", "model_format_name": "豆包1.5Pro 256K"},
+            # {"model_name": "doubao-1-5-pro-256k-250115", "description": "新用户赠送额度，可以前往<a href='https://console.volcengine.com/ark' target='__blank'>火山引擎</a>申请APIKEY使用", "base_url": "https://ark.cn-beijing.volces.com/api/v3/", "model_format_name": "豆包1.5Pro 256K"},
             {"model_name": "deepseek-v3-241226", "description": "新用户赠送额度，可以前往<a href='https://console.volcengine.com/ark' target='__blank'>火山引擎</a>申请APIKEY使用", "base_url": "https://ark.cn-beijing.volces.com/api/v3/", "model_format_name": "DeepSeek V3(火山引擎)"}
         ]
         for model in _base_model_list:
@@ -203,7 +203,7 @@ class LLMConfigDatabase(LocalDatabase):
         WHERE model_name = ?
         """, (description, model_name), commit=True)
 
-    def update_apikey_description(self, apikey: str, description: str) -> None:
+    def update_apikey_description(self, apikey_id: int, description: str) -> None:
         """
         更新APIKEY描述信息
         :param apikey: 需要更新的APIKEY
@@ -212,8 +212,8 @@ class LLMConfigDatabase(LocalDatabase):
         self.execute_query("""
         UPDATE apikey_list
         SET description = ?
-        WHERE apikey = ?
-        """, (description, apikey), commit=True)
+        WHERE apikey_id = ?
+        """, (description, apikey_id), commit=True)
 
     def delete_model(self, model_id: int) -> None:
         """
@@ -225,15 +225,15 @@ class LLMConfigDatabase(LocalDatabase):
         WHERE model_id = ?
         """, (model_id,), commit=True)
 
-    def delete_apikey(self, apikey: str) -> None:
+    def delete_apikey_by_id(self, apikey_id: int) -> None:
         """
         删除指定APIKEY
         :param apikey: 需要删除的APIKEY
         """
         self.execute_query("""
         DELETE FROM apikey_list
-        WHERE apikey = ?
-        """, (apikey,), commit=True)
+        WHERE apikey_id = ?
+        """, (apikey_id,), commit=True)
 
     def check_model_apikey(self, model_id: int) -> bool:
         """
