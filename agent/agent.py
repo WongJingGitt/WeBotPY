@@ -1,11 +1,9 @@
-import json
 from typing import List, Dict
 
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
-from langchain_text_splitters.json import RecursiveJsonSplitter
 
 from agent.agent_types import StepItem, PlannerResult
 from llm.llm import LLMFactory
@@ -29,8 +27,8 @@ class WeBotAgent:
 请严格按照以下规则操作：
 
 1. **说明**  
-   - **微信Port：**使用 `{webot_port}` 作为微信Port参数。
-   - **工具函数使用规范：**注意结合实际场景调用工具函数，例如：
+    - **微信Port：**使用 `{webot_port}` 作为微信Port参数。
+    - **工具函数使用规范：**注意结合实际场景调用工具函数，例如：
         - `get_message_by_wxid_and_time`用于获取聊天记录字典（主要供模型二次分析，不供用户直接使用）；
         - `export_message`用于将聊天记录导出为本地文件，当用户要求导出、提取或下载聊天记录时应调用此函数。
 
@@ -62,18 +60,3 @@ class WeBotAgent:
 
     def chat(self, message: Dict[str, List[BaseMessage | dict]]):  # -> List[HumanMessage|AIMessage|ToolMessage]:
         return self.agent.stream(message, stream_mode=['updates'], config={"configurable": {"thread_id": 42}})
-        # result = self.agent.invoke(message, config={"configurable": {"thread_id": 42}})
-        # return result.get('messages')
-
-
-if __name__ == '__main__':
-    agent = WeBotAgent(model_name='deepseek_v3')
-    result = agent.chat({
-        "messages": [
-            HumanMessage(content="看下'人生何处不青山'今天中午到现在都在聊些什么")
-        ]
-    })
-
-    for item in result:
-        print(item)
-        print('-----')
