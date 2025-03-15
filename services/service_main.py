@@ -1,9 +1,8 @@
-import traceback
 from datetime import datetime
 from json import loads, dumps
 from threading import Thread, Event
 from os import path
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Union
 from dataclasses import asdict
 from uuid import uuid4
 
@@ -21,7 +20,6 @@ from agent.agent import WeBotAgent
 
 from flask import Flask, request, has_request_context, send_file, stream_with_context, Response as FlaskResponse
 from flask_cors import CORS
-from flask_socketio import SocketIO
 from requests import post as http_post
 
 
@@ -186,17 +184,15 @@ class ServiceMain(Flask):
             content=message,
             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             visible=1,
-            wechat_message_config=dumps({"model": body.get('model', "glm-4-flash")}),
+            wechat_message_config=dumps({"model_id": model_id}),
             message_id=user_message_id
         )
 
         all_messages = self._conversions_database.get_messages(conversation_id)
         all_messages = [{ "role": "user" if _message.get('role') == 'user' else 'assistant', "content": _message.get('content')  } for _message in all_messages if _message.get('content')]
-        print(all_messages)
         def event_stream():
             # 初始化响应流
-            yield "data: 开始AI处理流程...\n\n"
-            
+            yield "data: [START]\n\n"
             try:
                 agent = WeBotAgent(
                     model_name=model_name,
@@ -221,12 +217,19 @@ class ServiceMain(Flask):
                     chunk = self._process_message_chunk(message, conversation_id, user_message_id=user_message_id, original_assistant_message=original_assistant_message)
                     if chunk:
                         yield f"data: {chunk}\n\n"
-                        
-                yield "data: [DONE]\n\n"
             except GeneratorExit as ge:
                 raise ge
             except Exception as e:
-                yield f"data: 错误：{str(e)}\n\n"
+                self._save_message(
+                    cid=conversation_id,
+                    role="assistant",
+                    content=str(e),
+                    message_id=str(uuid4()),
+                    wechat_message_config=dumps({"type": "error", "message": "后端出错"}),
+                )
+                yield f"""data: {dumps([{'role': 'assistant', 'content': str(e), 'wechat_message_config': '{"type": "error", "message": "后端出错"}'}])}\n\n"""
+            finally:
+                yield "data: [DONE]\n\n"
 
         return FlaskResponse(
             stream_with_context(event_stream()),
@@ -236,7 +239,7 @@ class ServiceMain(Flask):
 
     def _create_conversation(self, body, _bot):
         """创建新对话记录"""
-        if not body.get('conversation_id'):
+        if not body.get('conversation_id') or body.get('conversation_id') == '':
             start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             return self._conversions_database.add_conversation(
                 user_id=_bot.get('info').get('wxid'),
@@ -349,7 +352,7 @@ class ServiceMain(Flask):
 
 
     @property
-    def _route_map(self) -> List[Dict[str, Callable | str]]:
+    def _route_map(self) -> List[Dict[str, Union[Callable, str]]]:
         return [
             {"rule": '/', "endpoint": "hello_world", "methods": ['GET'], "view_func": self._hello_world},
             {"rule": "/api/bot/start", "endpoint": "start", "methods": ['POST'], "view_func": self._start_bot},
