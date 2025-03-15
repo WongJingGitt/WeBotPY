@@ -176,7 +176,7 @@ def get_talker_name(db_handle, wxid, port=19001) -> tuple[str, str, str]:
     :param db_handle: MicroMsg.db数据库句柄
     :param wxid: 微信id
     :param port: 端口号
-    :return: tuple[备注, 微信名]
+    :return: tuple[备注, 微信名, WXID]
     """
     contact_list = CONTACT_LIST.get(port, None)
 
