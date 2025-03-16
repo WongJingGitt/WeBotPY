@@ -160,6 +160,7 @@ class ServiceMain(Flask):
             return response.json
    
     def _ai_stream(self):
+        # TODO: DeepSeek自身bug会无限调用工具函数，考虑优化逻辑，优先使用免费模型调用工具函数获取聊天记据，DeepSeek仅负责总结相关操作
         body = request.json
         port = body.get('port')
         message = body.get('message', '')
