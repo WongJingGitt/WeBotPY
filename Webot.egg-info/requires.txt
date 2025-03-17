@@ -1,0 +1,11 @@
+flask
+dotenv
+langchain_openai
+langchain_google_genai
+beautifulsoup4
+lxml
+wxhook
+python-docx
+zhipuai
+langgraph
+flask_cors

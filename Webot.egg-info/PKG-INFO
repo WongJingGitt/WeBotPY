@@ -1,3 +1,14 @@
 Metadata-Version: 2.1
 Name: Webot
 Version: 0.1.0
+Requires-Dist: flask
+Requires-Dist: dotenv
+Requires-Dist: langchain_openai
+Requires-Dist: langchain_google_genai
+Requires-Dist: beautifulsoup4
+Requires-Dist: lxml
+Requires-Dist: wxhook
+Requires-Dist: python-docx
+Requires-Dist: zhipuai
+Requires-Dist: langgraph
+Requires-Dist: flask_cors
