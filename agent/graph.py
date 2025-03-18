@@ -1,4 +1,4 @@
-from typing import TypedDict, List
+from typing import TypedDict, List, Union, Any
 from os import getenv
 
 from langgraph.graph import StateGraph, MessagesState, START, END
@@ -14,20 +14,25 @@ from dotenv import load_dotenv
 from llm.llm import LLMFactory
 from utils.project_path import DATA_PATH, path
 from tool_call.tools import ALL_TOOLS
-from graph_types import StepItemModel, StepItem, PlanModel, PlanGenerationError
+from graph_types import StepItemModel, PlanResult, PlanModel, PlanGenerationError
 
 load_dotenv()
 
-class BaseState(TypedDict):
-        messages: MessagesState
-        model_name: str
-        llm_options: dict
-        webot_port: int = 19001
-        plan: list[StepItem] = []
-        
 
-class Graph():
-     
+class BaseState(TypedDict):
+    messages: MessagesState
+    model_name: str
+    llm_options: dict
+    webot_port: int
+    plan: List[StepItemModel]
+    current_step_id: int
+    next_step_id: Union[int, None]
+    plan_result: List[PlanResult]
+    final_result: Any
+
+
+class Graph:
+
     def __init__(self):
         checkpointer_database_path = path.join(DATA_PATH, 'databases', 'checkpoint.db')
         self._checkpointer = SqliteSaver(
@@ -44,7 +49,7 @@ class Graph():
         self._graph.add_node('plan_agent', self._plan_agent, retry=RetryPolicy(retry_on=PlanGenerationError))
         self._graph.add_conditional_edges(START, self._main_agent, ['chat_agent', 'plan_agent'])
         self._agent = self._graph.compile(checkpointer=self._checkpointer)
-    
+
     @property
     def agent(self):
         return self._agent
@@ -55,10 +60,10 @@ class Graph():
             _description += f"函数名：{item.name}\n描述 ：{item.description}\n"
             if with_args:
                 _description += f"接收参数：{item.args}\n"
-            _description += '='*10 + '\n'
+            _description += '=' * 10 + '\n'
         return _description
 
-    def _main_agent(self, state: BaseState) -> Command:
+    def _main_agent(self, state: BaseState) -> Send:
         _prompt = f"""
 你是一位专业的意图分析大师，专责对用户输入进行精准意图判断。请严格按照以下规则执行：
 1. 分析用户输入，判断是否涉及工具调用需求。
@@ -86,8 +91,7 @@ class Graph():
         else:
             print("CHAT AGENT 调用")
             return Send('chat_agent', state)
-         
-     
+
     def _chat_agent(self, state: BaseState):
 
         _prompt = f"""
@@ -232,10 +236,29 @@ class Graph():
         except Exception as e:
             raise PlanGenerationError(f"{e}")
 
-    
-    def _task_agent(self, state: BaseState):
+    def _execute_tool(self, state: BaseState):
         pass
 
+    # TODO: 灵感阻塞，敲不出来，打个火锅去先
+    def _execute_tool_agent(self, state: BaseState):
+        plan = state['plan']
+        current_step_index = state['current_step_id']
+        current_step = plan[current_step_index]
+        plan_result = state['plan_result']
+        _agent = create_react_agent(
+            model=LLMFactory.llm(model_name=state['model_name'], **state['llm_options']),
+            prompt=f"""
+你是一位专业的原子任务执行大师，负责按步骤描述调用工具执行函数，并且输出结果，你的主要职责如下：
+## 全局步骤列表：
+    {plan}
+## 当前处于step_id为{current_step}的步骤，步骤详细数据：
+    {current_step}
+## 之前的步骤执行结果：
+    {plan_result}
+""",
+            tools=ALL_TOOLS,
+        )
+        _agent.invoke()
 
     def _tool_agent(self, state: BaseState):
         _prompt = """
@@ -260,12 +283,12 @@ class Graph():
 #   需要动态配置各个节点的模型使用，兼容全局使用一个模型或者每个步骤单独使用模型的场景。例如：任务规划师使用高参数模型，原子任务执行师使用低参数模型（需要考虑每分钟调用上限？？？）
 
 if __name__ == '__main__':
-
     graph = Graph()
     _agent = graph.agent
     result = _agent.invoke(
         {
-            "messages": MessagesState(messages=[HumanMessage(content="请帮我根据群聊：人生何处不青山，昨天一整天的聊天记录，总结一下大家都在聊什么话题，按热度进行降序展示TOP10")]),
+            "messages": MessagesState(messages=[HumanMessage(
+                content="请帮我根据群聊：人生何处不青山，昨天一整天的聊天记录，总结一下大家都在聊什么话题，按热度进行降序展示TOP10")]),
             # "model_name": "deepseek-v3-241226",
             # "llm_options": {
             #     "apikey": getenv('VOLCENGINE_API_KEY'),
@@ -286,4 +309,4 @@ if __name__ == '__main__':
         config={"configurable": {"thread_id": 42}}
     )
 
-    print(result)
+    print(result.get('plan'))
