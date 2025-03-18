@@ -16,6 +16,9 @@ setup(
         "python-docx",
         "zhipuai",
         "langgraph",
-        "flask_cors"
+        "flask_cors",
+        "langchain_text_splitters",
+        "langgraph-checkpoint-sqlite",
+        "pydantic"
     ]
 )
