@@ -9,6 +9,8 @@ Webot.egg-info/top_level.txt
 agent/__init__.py
 agent/agent.py
 agent/agent_types.py
+agent/graph.py
+agent/graph_types.py
 bot/__init__.py
 bot/bot_storage.py
 bot/contact.py

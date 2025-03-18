@@ -19,6 +19,7 @@ setup(
         "flask_cors",
         "langchain_text_splitters",
         "langgraph-checkpoint-sqlite",
-        "pydantic"
+        "pydantic",
+        "langchain_core"
     ]
 )
