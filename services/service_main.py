@@ -1,5 +1,5 @@
 from datetime import datetime
-from json import loads, dumps
+from json import dumps
 from threading import Thread, Event
 from os import path
 from typing import List, Dict, Callable, Union
@@ -10,7 +10,6 @@ from utils.project_path import CONFIG_PATH, ROOT_PATH
 from services.service_type import Response, Request
 from utils.toolkit import get_latest_wechat_version
 from bot.webot import WeBot
-from utils.chat_glm import chat_with_function_tools as chat_with_glm
 from bot.bot_storage import BotStorage
 from services.service_conversations import ServiceConversations
 from services.service_llm import ServiceLLM
