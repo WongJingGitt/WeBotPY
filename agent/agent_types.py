@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
-from typing import Literal, Dict, Any, List
+from typing import Literal, Dict, Any, List, TypedDict
+from langgraph.graph import MessagesState
 
 
 class StepItem(BaseModel):
@@ -15,9 +16,14 @@ class StepItem(BaseModel):
     model_config = {"json_schema_extra": {"type": "object"}}
 
 
-class PlannerResult(BaseModel):
-    status: Literal['IN_PROGRESS', 'COMPLETED', 'NEED_CLARIFICATION'] = Field(default='IN_PROGRESS',
-                                                                              description='任务整体状态标识，表示任务当前处于进行中、已完成或需要用户澄清的状态。')
-    steps: List[StepItem] = Field(..., description='任务规划师生成的步骤列表，每个步骤定义了任务中的一个具体操作。')
 
-    model_config = {"json_schema_extra": {"type": "object"}}
+class TaskStatus(TypedDict):
+    status: Literal['IN_PROGRESS', 'COMPLETED', 'NEED_CLARIFICATION']
+
+    messages: MessagesState
+
+    model_name: str
+
+    llm_options: dict
+
+    current_step: int | None
