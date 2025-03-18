@@ -1,16 +1,6 @@
 from typing import Any, Dict, List, TypedDict, Union
 from pydantic import BaseModel, Field
 
-class StepItem(TypedDict):
-    step_id: int
-    description: str
-    tool: str
-    input: Dict[str, Any]
-    depends_on: List[int]
-    clarification: str
-    decision_required: str
-    model_config = {"json_schema_extra": {"type": "object"}}
-
 
 class StepItemModel(BaseModel):
     step_id: int = Field(..., description='步骤的唯一标识符，用于标识当前步骤在任务中的顺序和引用。')
@@ -24,14 +14,22 @@ class StepItemModel(BaseModel):
 
     model_config = {"json_schema_extra": {"type": "object"}}
 
+
+class PlanResult(StepItemModel):
+    result: Dict[str, Any] = Field(default={}, description='工具函数的返回结果，格式为字典。')
+
+
 class PlanModel(BaseModel):
-    step_items: List[StepItemModel] = Field(..., description='步骤列表，包含每个步骤的详细信息。注意：**每个步骤的格式必须为字典。**')
+    step_items: List[StepItemModel] = Field(...,
+                                            description='步骤列表，包含每个步骤的详细信息。注意：**每个步骤的格式必须为字典。**')
 
 
 class PlanGenerationError(Exception):
     """自定义的Plan生成错误"""
+
     def __init__(self, message):
         self.message = message
 
     def __str__(self):
         return self.message
+
