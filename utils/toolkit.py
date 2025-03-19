@@ -1,5 +1,3 @@
-
-
 import requests
 from bs4 import BeautifulSoup
 from typing import Optional
@@ -12,9 +10,8 @@ def get_latest_wechat_version() -> Optional[str]:
     }
 
     try:
-        # 发送同步请求
         response = requests.get('https://github.com/tom-snow/wechat-windows-versions/tags', headers=request_headers)
-        response.raise_for_status()  # 检查请求是否成功
+        response.raise_for_status()  
     except requests.RequestException:
         return None
 
@@ -29,3 +26,8 @@ def get_latest_wechat_version() -> Optional[str]:
         return version
 
     return None
+
+
+
+
+
