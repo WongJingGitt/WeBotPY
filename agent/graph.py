@@ -1,5 +1,6 @@
 from typing import TypedDict, List, Union, Any
 from os import getenv
+from json import dumps
 
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.types import Command, Send
@@ -14,7 +15,7 @@ from dotenv import load_dotenv
 from llm.llm import LLMFactory
 from utils.project_path import DATA_PATH, path
 from tool_call.tools import ALL_TOOLS
-from graph_types import StepItemModel, PlanResult, PlanModel, PlanGenerationError
+from graph_types import StepItemModel, PlanResult, ExecuteToolError, PlanGenerationError
 
 load_dotenv()
 
@@ -41,12 +42,16 @@ class Graph:
                 check_same_thread=False
             )
         )
+
+        self._parser = JsonOutputParser()
+
         self._graph = StateGraph(BaseState)
 
         self._graph.add_node('main_agent', self._main_agent)
         self._graph.add_node('chat_agent', self._chat_agent)
         self._graph.add_node('tool_agent', self._tool_agent)
         self._graph.add_node('plan_agent', self._plan_agent, retry=RetryPolicy(retry_on=PlanGenerationError))
+        self._graph.add_node('execute_tool_agent', self._execute_tool_agent, retry=RetryPolicy(retry_on=ExecuteToolError))
         self._graph.add_conditional_edges(START, self._main_agent, ['chat_agent', 'plan_agent'])
         self._agent = self._graph.compile(checkpointer=self._checkpointer)
 
@@ -80,7 +85,7 @@ class Graph:
             prompt=_prompt,
             tools=[]
         )
-        response = _agent.invoke(state['messages'])
+        response = _agent.invoke(state['messages'], config={"configurable": {"thread_id": 42}})
         # print(response.get('messages')[-1].content)
         if response.get('messages')[-1].content == 'chat':
             print("CHAT AGENT 调用")
@@ -227,38 +232,64 @@ class Graph:
             tools=[],
         )
         try:
-            response = _agent.invoke(state['messages'])
+            response = _agent.invoke(state['messages'], config={"configurable": {"thread_id": 42}})
             _result = response.get('messages')[-1].content
-            _parser = JsonOutputParser()
-            _result = _parser.parse(_result)
-            state['plan'] = [StepItemModel(**item) for item in _result]
-            return Command(goto=END, update=state)
+            state['plan'] = self._parser.parse(_result)
+            return Command(goto="execute_tool_agent", update=state)
         except Exception as e:
             raise PlanGenerationError(f"{e}")
-
-    def _execute_tool(self, state: BaseState):
-        pass
 
     # TODO: 灵感阻塞，敲不出来，打个火锅去先
     def _execute_tool_agent(self, state: BaseState):
         plan = state['plan']
-        current_step_index = state['current_step_id']
-        current_step = plan[current_step_index]
-        plan_result = state['plan_result']
         _agent = create_react_agent(
             model=LLMFactory.llm(model_name=state['model_name'], **state['llm_options']),
             prompt=f"""
-你是一位专业的原子任务执行大师，负责按步骤描述调用工具执行函数，并且输出结果，你的主要职责如下：
-## 全局步骤列表：
-    {plan}
-## 当前处于step_id为{current_step}的步骤，步骤详细数据：
-    {current_step}
-## 之前的步骤执行结果：
-    {plan_result}
+你是一位专业的任务执行大师，你会接收到一个包含若干步骤的执行计划，你需要根据这个计划，执行每一个步骤，具体要求如下：
+
+## 返回格式要求：
+    1. 你需要返回一个JSON格式的内容，格式如下：
+    {{
+        "completed_steps": [0, 1, 2], // 记录已完成步骤的列表，存放的内容为`step_id`,
+        "last_step_id": 3, // 最后一次执行的步骤ID，在每执行完一个步骤，你都要更新这个字段，以便出错时进行快速重试。"
+        "result": [ // 记录每个步骤的执行结果
+            {{
+                "step_id": 0,   // 步骤的唯一标识符，用于标识当前步骤在任务中的顺序和引用。
+                "status": "success", // 当前步骤的执行结果状态，仅允许三个值：success/error/pending，其中
+                "output": {{}}, // 当前步骤的输出结果，格式为字典，根据工具函数的返回值进行解析。
+                "error": ""  // 当前步骤的错误信息，如果步骤执行成功，则该字段为空。
+                "clarification": ""  // 如若需要用户澄清时，展示给用户的的澄清信息，不需要澄清则为空。
+                "user_feedback": ""  // 基于澄清步骤，用户返回的结果，在用户回馈之后再补充进来。
+                "decision_log": ""  // 基于当前步骤决策的日志，用于记录当前步骤的决策过程。
+            }}
+        ], 
+    }}
+
+## 步骤字段解释：
+    {{
+        "step_id": 2, // 步骤的唯一标识符，用于标识当前步骤在任务中的顺序和引用。
+        "description": "xxx", // 对当前步骤的简要描述，这里的内容将会显示给用户，帮助用户理解该步骤的目的和任务。
+        "tool": "get_weather", // 执行该步骤所调用的工具函数名称。
+        "input": {{ }}, // 调用工具函数时所需要的输入参数，格式为字典。
+        "depends_on": [1], // 该步骤依赖的其他步骤的ID列表，用于定义执行顺序和依赖关系。
+        "clarification": "", // 当该步骤可能需要用户澄清或确认时，对应的提示信息参考，你需要根据这个字段进行拓展描述返回给用户。例如：get_contact获取到了多个联系人时对应的提示信息。
+        "decision_required": "", // 描述该步骤中可能需要你进行推理或自主决策的内容。例如：根据get_current_time函数结果推断昨天的具体日期。
+    }}
 """,
             tools=ALL_TOOLS,
         )
-        _agent.invoke()
+        try:
+            input_message = MessagesState(messages=[HumanMessage(content=dumps(plan))])
+            print(input_message)
+            response = _agent.stream(input_message, config={"configurable": {"thread_id": 42}}, stream_mode='updates')
+            for item in response:
+                print(item)
+            # _result = self._parser.parse(response.get('messages')[-1].content)
+            # print(_result)
+            return Command(goto=END, update=state)
+        except Exception as e:
+            raise ExecuteToolError(f"{e}")
+
 
     def _tool_agent(self, state: BaseState):
         _prompt = """
@@ -288,25 +319,24 @@ if __name__ == '__main__':
     result = _agent.invoke(
         {
             "messages": MessagesState(messages=[HumanMessage(
-                content="请帮我根据群聊：人生何处不青山，昨天一整天的聊天记录，总结一下大家都在聊什么话题，按热度进行降序展示TOP10")]),
+                content="请帮我根据群聊：人生何处不青山，昨天早上8点到中午12点的聊天记录，总结一下大家都在聊什么话题，按热度进行降序展示TOP10")]),
             # "model_name": "deepseek-v3-241226",
             # "llm_options": {
             #     "apikey": getenv('VOLCENGINE_API_KEY'),
             #     "base_url": 'https://ark.cn-beijing.volces.com/api/v3/'
             # },
-            # "model_name": "gemini-2.0-flash-exp",
-            # "llm_options": {
-            #     "apikey": getenv("GEMINI_API_KEY"),
-            #     "base_url": ""
-            # },
-            "model_name": "doubao-1-5-pro-32k-250115",
+            "model_name": "gemini-2.0-flash-exp",
             "llm_options": {
-                "apikey": getenv('VOLCENGINE_API_KEY'),
-                "base_url": 'https://ark.cn-beijing.volces.com/api/v3/'
+                "apikey": getenv("GEMINI_API_KEY"),
+                "base_url": ""
             },
-            "webot_port": 19001
+            # "model_name": "doubao-1-5-pro-32k-250115",
+            # "llm_options": {
+            #     "apikey": getenv('VOLCENGINE_API_KEY'),
+            #     "base_url": 'https://ark.cn-beijing.volces.com/api/v3/'
+            # },
+            # "webot_port": 19001
         },
-        config={"configurable": {"thread_id": 42}}
+        config={"configurable": {"thread_id": 42}},
+        stream_mode=['updates']
     )
-
-    print(result.get('plan'))

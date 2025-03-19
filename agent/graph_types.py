@@ -32,4 +32,13 @@ class PlanGenerationError(Exception):
 
     def __str__(self):
         return self.message
+    
+class ExecuteToolError(Exception):
+    """自定义的Tool执行错误"""
+    def __init__(self, message):
+        self.message = message
+    
+    def __str__(self):
+        return self.message
+
 
