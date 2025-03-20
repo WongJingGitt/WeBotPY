@@ -3,7 +3,7 @@ from os import getenv
 from json import dumps
 
 from langgraph.graph import StateGraph, MessagesState, START, END
-from langgraph.types import Command, Send
+from langgraph.types import Command, Send, interrupt
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_core.messages import HumanMessage
@@ -49,7 +49,6 @@ class Graph:
 
         self._graph.add_node('main_agent', self._main_agent)
         self._graph.add_node('chat_agent', self._chat_agent)
-        self._graph.add_node('tool_agent', self._tool_agent)
         self._graph.add_node('plan_agent', self._plan_agent, retry=RetryPolicy(retry_on=PlanGenerationError))
         self._graph.add_node('execute_tool_agent', self._execute_tool_agent, retry=RetryPolicy(retry_on=ExecuteToolError))
         self._graph.add_conditional_edges(START, self._main_agent, ['chat_agent', 'plan_agent'])
@@ -234,77 +233,46 @@ class Graph:
         try:
             response = _agent.invoke(state['messages'], config={"configurable": {"thread_id": 42}})
             _result = response.get('messages')[-1].content
-            state['plan'] = self._parser.parse(_result)
+            state['plan'] = [StepItemModel(**item) for item in self._parser.parse(_result)]
             return Command(goto="execute_tool_agent", update=state)
         except Exception as e:
             raise PlanGenerationError(f"{e}")
 
-    # TODO: 灵感阻塞，敲不出来，打个火锅去先
+
     def _execute_tool_agent(self, state: BaseState):
+        """
+        [
+            StepItemModel(step_id=1, description='获取当前系统时间确定昨天的时间范围', tool='get_current_time', input={'port': 19001}, depends_on=[], clarification='', decision_required='根据当前时间自动推算昨天的日期，并拼接出早上8点和中午12点的时间格式'), 
+            StepItemModel(step_id=2, description='检索群聊「人生何处不青山」的wxid', tool='get_contact', input={'port': 19001, 'keyword': '人生何处不青山'}, depends_on=[], clarification='若发现多个匹配群聊，请确认是否需要选择第一个结果', decision_required='自动选择匹配度最高的结果'), 
+            StepItemModel(step_id=3, description='提取指定群聊在昨天早上8点到中午12点的聊天记录', tool='get_message_by_wxid_and_time', input={'port': 19001, 'wxid': '$2.wxid', 'start_time': "$1.current_time_format.split()[0] + ' 08:00:00' - 1day", 'end_time': "$1.current_time_format.split()[0] + ' 12:00:00' - 1day"}, depends_on=[1, 2], clarification='', decision_required='时间表达式自动转换逻辑'), 
+            StepItemModel(step_id=4, description='智能分析聊天记录话题热度，并展示TOP10话题', tool='', input={'messages': '$3.data'}, depends_on=[3], clarification='若话题数量不足10个，将展示全部话题', decision_required='自然语言处理模型进行话题提取和热度统计')
+        ]
+        """
         plan = state['plan']
-        _agent = create_react_agent(
-            model=LLMFactory.llm(model_name=state['model_name'], **state['llm_options']),
-            prompt=f"""
-你是一位专业的任务执行大师，你会接收到一个包含若干步骤的执行计划，你需要根据这个计划，执行每一个步骤，具体要求如下：
-
-## 返回格式要求：
-    1. 你需要返回一个JSON格式的内容，格式如下：
-    {{
-        "completed_steps": [0, 1, 2], // 记录已完成步骤的列表，存放的内容为`step_id`,
-        "last_step_id": 3, // 最后一次执行的步骤ID，在每执行完一个步骤，你都要更新这个字段，以便出错时进行快速重试。"
-        "result": [ // 记录每个步骤的执行结果
-            {{
-                "step_id": 0,   // 步骤的唯一标识符，用于标识当前步骤在任务中的顺序和引用。
-                "status": "success", // 当前步骤的执行结果状态，仅允许三个值：success/error/pending，其中
-                "output": {{}}, // 当前步骤的输出结果，格式为字典，根据工具函数的返回值进行解析。
-                "error": ""  // 当前步骤的错误信息，如果步骤执行成功，则该字段为空。
-                "clarification": ""  // 如若需要用户澄清时，展示给用户的的澄清信息，不需要澄清则为空。
-                "user_feedback": ""  // 基于澄清步骤，用户返回的结果，在用户回馈之后再补充进来。
-                "decision_log": ""  // 基于当前步骤决策的日志，用于记录当前步骤的决策过程。
-            }}
-        ], 
-    }}
-
-## 步骤字段解释：
-    {{
-        "step_id": 2, // 步骤的唯一标识符，用于标识当前步骤在任务中的顺序和引用。
-        "description": "xxx", // 对当前步骤的简要描述，这里的内容将会显示给用户，帮助用户理解该步骤的目的和任务。
-        "tool": "get_weather", // 执行该步骤所调用的工具函数名称。
-        "input": {{ }}, // 调用工具函数时所需要的输入参数，格式为字典。
-        "depends_on": [1], // 该步骤依赖的其他步骤的ID列表，用于定义执行顺序和依赖关系。
-        "clarification": "", // 当该步骤可能需要用户澄清或确认时，对应的提示信息参考，你需要根据这个字段进行拓展描述返回给用户。例如：get_contact获取到了多个联系人时对应的提示信息。
-        "decision_required": "", // 描述该步骤中可能需要你进行推理或自主决策的内容。例如：根据get_current_time函数结果推断昨天的具体日期。
-    }}
-""",
-            tools=ALL_TOOLS,
-        )
-        try:
-            input_message = MessagesState(messages=[HumanMessage(content=dumps(plan))])
-            print(input_message)
-            response = _agent.stream(input_message, config={"configurable": {"thread_id": 42}}, stream_mode='updates')
-            for item in response:
-                print(item)
-            # _result = self._parser.parse(response.get('messages')[-1].content)
-            # print(_result)
-            return Command(goto=END, update=state)
-        except Exception as e:
-            raise ExecuteToolError(f"{e}")
+        plan_result = state.get('plan_result', []) 
+        current_step_id = state.get('current_step_id') or plan[0].step_id
+        current_step = ([item for item in plan if item.step_id == current_step_id] or [None])[0]
+        
+        if not current_step:
+            return Command(goto="plan_agent", update=state)
+        
+        # TODO : 逻辑待完成，使用原子任务执行专家方案，这个函数应该专注于执行单个任务，遍历工作需要另外用工具负责
 
 
-    def _tool_agent(self, state: BaseState):
-        _prompt = """
-这是一个测试对话，不管用户输入什么，请你按一下格式回复：
-输入：用户的原始数据。
-输出：模拟tool输出
-    """
-        _llm = LLMFactory.llm(model_name=state['model_name'], **state['llm_options'])
-        _agent = create_react_agent(
-            model=_llm,
-            prompt=_prompt,
-            tools=[]
-        )
-        response = _agent.invoke(state['messages'])
-        state['messages']['messages'].append(response)
+        _prompt = f"""
+你是一个专业的工作流执行专家，专注于任务的执行，具体说明如下：
+
+## 当前你需要执行的任务是：
+    {current_step.description}
+
+## 你需要使用以下工具函数来执行任务：
+    **需要调用的工具函数**：{current_step.tool}
+    **需要传递的参数**：{current_step.input}
+
+## 依赖说明：
+
+"""
+        
         return Command(goto=END, update=state)
 
 
@@ -325,18 +293,20 @@ if __name__ == '__main__':
             #     "apikey": getenv('VOLCENGINE_API_KEY'),
             #     "base_url": 'https://ark.cn-beijing.volces.com/api/v3/'
             # },
-            "model_name": "gemini-2.0-flash-exp",
-            "llm_options": {
-                "apikey": getenv("GEMINI_API_KEY"),
-                "base_url": ""
-            },
-            # "model_name": "doubao-1-5-pro-32k-250115",
+            # "model_name": "gemini-2.0-flash-exp",
             # "llm_options": {
-            #     "apikey": getenv('VOLCENGINE_API_KEY'),
-            #     "base_url": 'https://ark.cn-beijing.volces.com/api/v3/'
+            #     "apikey": getenv("GEMINI_API_KEY"),
+            #     "base_url": ""
             # },
-            # "webot_port": 19001
+            "model_name": "doubao-1-5-pro-32k-250115",
+            "llm_options": {
+                "apikey": getenv('VOLCENGINE_API_KEY'),
+                "base_url": 'https://ark.cn-beijing.volces.com/api/v3/'
+            },
+            "webot_port": 19001
         },
         config={"configurable": {"thread_id": 42}},
-        stream_mode=['updates']
+        # stream_mode=['updates']
     )
+
+    # print(result)

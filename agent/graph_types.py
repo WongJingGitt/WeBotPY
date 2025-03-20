@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, TypedDict, Union
+from typing import Any, Dict, List, TypedDict, Literal
 from pydantic import BaseModel, Field
 
 
@@ -14,9 +14,20 @@ class StepItemModel(BaseModel):
 
     model_config = {"json_schema_extra": {"type": "object"}}
 
+class PlanResultItem(BaseModel):
+    step_id: int = Field(..., description='步骤的唯一标识符，用于标识当前步骤在任务中的顺序和引用。')
+    status: Literal["success", "error", "pending"] = Field(..., description='当前步骤的执行结果状态，仅允许三个值：success/error/pending，其中')
+    output: Any = Field(..., description='当前步骤的输出结果')
+    error: str = Field(default='', description='当前步骤的错误信息，如果步骤执行成功，则该字段为空。如果步骤执行出错，则记录出错信息。')
+    clarification: str = Field(default='', description='如若需要用户澄清时，展示给用户的的澄清信息，不需要澄清则为空。')
+    user_feedback: str = Field(default='', description='用户对当前步骤的 Clarification 的反馈，用于记录用户对 clarification 的反馈。')
+    decision_log: str = Field(default='', description='记录当前步骤的决策日志，用于记录当前步骤的决策过程。')
 
-class PlanResult(StepItemModel):
-    result: Dict[str, Any] = Field(default={}, description='工具函数的返回结果，格式为字典。')
+
+class PlanResult(BaseModel):
+    completed_steps: List[int] = Field(..., description='已完成的步骤的ID列表，用于记录当前任务的执行进度。')
+    last_step_id: int = Field(..., description='最后一次执行的步骤ID，在每执行完一个步骤，你都要更新这个字段，以便出错时进行快速重试。')
+    result: List[PlanResultItem] = Field(..., description='任务执行结果，用于记录每个步骤的输出结果。')
 
 
 class PlanModel(BaseModel):
