@@ -6,7 +6,7 @@ from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.types import Command, Send, interrupt
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.sqlite import SqliteSaver
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.pregel import RetryPolicy
 from langchain_core.output_parsers import JsonOutputParser
 from sqlite3 import connect
@@ -30,6 +30,8 @@ class BaseState(TypedDict):
     next_step_id: Union[int, None]
     plan_result: List[PlanResult]
     final_result: Any
+    plan_retry_count: int
+    plan_retry_description: str
 
 
 class Graph:
@@ -115,10 +117,16 @@ class Graph:
         )
         response = _agent.invoke(state['messages'])
         state['messages']['messages'].append(response)
-        # print(response)
         return Command(goto=END, update=state)
 
     def _plan_agent(self, state: BaseState):
+        if not state.get('plan_retry_count'): state['plan_retry_count'] = 0
+        if state['plan_retry_count'] > 3:
+            state['final_result'] = "抱歉，我无法理解您的意图。请重新输入。"
+            return Command(goto=END, update=state)
+        plan_retry_description = state.get('plan_retry_description')
+        if plan_retry_description:
+            state['messages']['messages'].append(HumanMessage(content=plan_retry_description))
         _prompt = f"""
 你是一位专业的任务规划大师，你的主要职责是：
 
@@ -248,32 +256,38 @@ class Graph:
             StepItemModel(step_id=4, description='智能分析聊天记录话题热度，并展示TOP10话题', tool='', input={'messages': '$3.data'}, depends_on=[3], clarification='若话题数量不足10个，将展示全部话题', decision_required='自然语言处理模型进行话题提取和热度统计')
         ]
         """
-        plan = state['plan']
-        plan_result = state.get('plan_result', []) 
-        current_step_id = state.get('current_step_id') or plan[0].step_id
-        current_step = ([item for item in plan if item.step_id == current_step_id] or [None])[0]
-        
-        if not current_step:
+        try:
+            plan = state['plan']
+            print(plan)
+            plan_result = state.get('plan_result', []) 
+            current_step_id = state.get('current_step_id') or plan[0].step_id
+            current_step = ([item for item in plan if item.step_id == current_step_id] or [None])[0]
+            
+            if not current_step:
+                return Command(goto="plan_agent", update=state)
+            
+            # TODO : 逻辑待完成，使用原子任务执行专家方案，这个函数应该专注于执行单个任务，遍历工作需要另外用工具负责
+
+
+            _prompt = f"""
+    你是一个专业的工作流执行专家，专注于任务的执行，具体说明如下：
+
+    ## 当前你需要执行的任务是：
+        {current_step.description}
+
+    ## 你需要使用以下工具函数来执行任务：
+        **需要调用的工具函数**：{current_step.tool}
+        **需要传递的参数**：{current_step.input}
+
+    ## 依赖说明：
+
+    """
+            
+            return Command(goto=END, update=state)
+        except Exception as e:
+            state['plan_retry_count'] += 1
+            state['plan_retry_description'] = f"你制定的任务执行时出选了以下错误: \n\n{e}\n\n 你上次做出的规划是：\n\n{plan}\n\n现在请你重新规划任务"
             return Command(goto="plan_agent", update=state)
-        
-        # TODO : 逻辑待完成，使用原子任务执行专家方案，这个函数应该专注于执行单个任务，遍历工作需要另外用工具负责
-
-
-        _prompt = f"""
-你是一个专业的工作流执行专家，专注于任务的执行，具体说明如下：
-
-## 当前你需要执行的任务是：
-    {current_step.description}
-
-## 你需要使用以下工具函数来执行任务：
-    **需要调用的工具函数**：{current_step.tool}
-    **需要传递的参数**：{current_step.input}
-
-## 依赖说明：
-
-"""
-        
-        return Command(goto=END, update=state)
 
 
 # TODO：
@@ -282,31 +296,91 @@ class Graph:
 #   需要动态配置各个节点的模型使用，兼容全局使用一个模型或者每个步骤单独使用模型的场景。例如：任务规划师使用高参数模型，原子任务执行师使用低参数模型（需要考虑每分钟调用上限？？？）
 
 if __name__ == '__main__':
+    with open(r"D:/wangyingjie/WeBot/data/exports/上海交大🇨🇳人生何处不青山__2025-03-11_13-34-19.txt", "r", encoding='utf-8') as f:
+        content = f.read()
     graph = Graph()
     _agent = graph.agent
     result = _agent.invoke(
         {
-            "messages": MessagesState(messages=[HumanMessage(
-                content="请帮我根据群聊：人生何处不青山，昨天早上8点到中午12点的聊天记录，总结一下大家都在聊什么话题，按热度进行降序展示TOP10")]),
-            # "model_name": "deepseek-v3-241226",
-            # "llm_options": {
-            #     "apikey": getenv('VOLCENGINE_API_KEY'),
-            #     "base_url": 'https://ark.cn-beijing.volces.com/api/v3/'
-            # },
+            "messages": MessagesState(messages=[
+                HumanMessage(content="请帮我根据群聊：人生何处不青山，3月11日的聊天记录，总结一下大家都在聊什么话题，按热度进行降序展示TOP10"),
+                AIMessage(content=f"好的，我已经获取到了3月11日的聊天记录：\n\n{content}"),
+                AIMessage(content="""
+根据聊天记录的内容，以下是按讨论热度降序排列的TOP10话题总结：
+
+**1. 红包互动**  
+• 高频出现"谢谢红包"及抢红包调侃  
+• 涉及金额、专属红包争议、流量抱怨  
+• 典型案例：甜辣小团子连续5次感谢红包
+
+**2. 线下见面与火锅计划**  
+• 刘心奶黄包与星星讨论约饭细节  
+• 群友调侃"日不到也不准别人日"  
+• 延伸至"车震""乱伦"等成人玩笑
+
+**3. 男女关系与成人话题**  
+• 高频提及"少妇""出轨""约炮"  
+• 包含"干姐姐""酒店过夜"等隐喻  
+• 典型案例：余余总结"四次约会发展论"
+
+**4. 工作与薪资讨论**  
+• 抱怨上班状态（"脸青口唇白"）  
+• 询问发工资时间  
+• 调侃"摸鱼"与放假诉求
+
+**5. 咖啡/奶茶社交邀请**  
+• 墨轩与美味猫堡互相@请客  
+• 延伸至金额调侃（"9块9自己买"）  
+• 引发群友集体"求请喝"
+
+**6. 群友互怼与网络暴力**  
+• 攻击性言论："废物""小三""狐狸精"  
+• 威胁踢人、版本过低无法互动  
+• 典型案例：呆呆魚指控老公发红包
+
+**7. 时事新闻热议**  
+• 摸鱼早报提及女性就业歧视、微信视频升级  
+• 涉及国际局势（波兰核武、叙利亚内乱）  
+• 但讨论深度较浅，多作为话题引子
+
+**8. 群规管理争议**  
+• 止初威胁清理"僵尸成员"  
+• 关于红包专属权限的争论  
+• 多次出现"踢人"相关发言
+
+**9. 表情包文化**  
+• 共出现17次[动画表情]  
+• 用于缓解冲突、表达情绪  
+• 典型案例：NPC连续发表情打断对话
+
+**10. 地域交通吐槽**  
+• 涉及龙华、蜀山、包河等地点  
+• 抱怨堵车（"堵的皮爆"）  
+• 讨论地铁线路与通勤时间
+
+**注**：话题热度综合考量了讨论次数、参与人数、互动激烈程度及话题延展性。成人向内容虽出现频率高，但因部分涉及隐喻未列更高位。
+"""),
+                HumanMessage(content="那请你再看下谁最活跃？")
+            ]),
+            "model_name": "deepseek-v3-241226",
+            "llm_options": {
+                "apikey": getenv('VOLCENGINE_API_KEY'),
+                "base_url": 'https://ark.cn-beijing.volces.com/api/v3/'
+            },
             # "model_name": "gemini-2.0-flash-exp",
             # "llm_options": {
             #     "apikey": getenv("GEMINI_API_KEY"),
             #     "base_url": ""
             # },
-            "model_name": "doubao-1-5-pro-32k-250115",
-            "llm_options": {
-                "apikey": getenv('VOLCENGINE_API_KEY'),
-                "base_url": 'https://ark.cn-beijing.volces.com/api/v3/'
-            },
+            # "model_name": "doubao-1-5-pro-32k-250115",
+            # "llm_options": {
+            #     "apikey": getenv('VOLCENGINE_API_KEY'),
+            #     "base_url": 'https://ark.cn-beijing.volces.com/api/v3/'
+            # },
             "webot_port": 19001
         },
         config={"configurable": {"thread_id": 42}},
         # stream_mode=['updates']
     )
 
-    # print(result)
+    print(result)
