@@ -1,6 +1,8 @@
+from typing import Optional
+from xmltodict import parse as parse_xml_fromstring
+
 import requests
 from bs4 import BeautifulSoup
-from typing import Optional
 
 
 def get_latest_wechat_version() -> Optional[str]:
@@ -28,6 +30,5 @@ def get_latest_wechat_version() -> Optional[str]:
     return None
 
 
-
-
-
+def xml_to_dict(xml_str: str) -> dict:
+    return parse_xml_fromstring(xml_str)
