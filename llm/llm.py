@@ -15,7 +15,7 @@ class LLMFactory:
 
     @staticmethod
     def llm(model_name, apikey, base_url, *args, **kwargs):
-        if model_name not in ["gemini-2.0-flash-exp"]:
+        if "gemini" not in model_name:
             return ChatOpenAI(
                 model=model_name,
                 api_key=SecretStr(apikey),
@@ -23,7 +23,7 @@ class LLMFactory:
                 *args, **kwargs
             )
 
-        if model_name == "gemini-2.0-flash-exp":
+        if "gemini" in model_name:
             return ChatGoogleGenerativeAI(
                 api_key=SecretStr(apikey),
                 model=model_name,
