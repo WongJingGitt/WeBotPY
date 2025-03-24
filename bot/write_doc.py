@@ -8,6 +8,9 @@ import yaml
 from bot.message import TextMessageFromDB, MessageType
 from utils.msg_pb2 import MessageBytesExtra
 from utils.project_path import DATA_PATH
+from utils.compress_content_praser import parse_compressed_content
+from utils.toolkit import xml_to_dict
+from utils.room_data_pb2 import ChatRoomData
 
 from requests import post
 from docx import Document
@@ -16,8 +19,7 @@ import xmltodict
 
 CONTACT_LIST = {}
 
-
-def get_all_message(db_handle, wxid, include_image, start_time=None, end_time=None, port=19001):
+def get_all_message(db_handle: list, wxid, include_image, start_time=None, end_time=None, port=19001):
     """
     获取指定联系人的所有消息。
     :param db_handle: MicroMsg.db数据库句柄
@@ -28,7 +30,17 @@ def get_all_message(db_handle, wxid, include_image, start_time=None, end_time=No
     :param port: 端口号
     :return: 消息列表。
     """
-    message_type = f"\"{MessageType.TEXT_MESSAGE}\", \"{MessageType.VOICE_MESSAGE}\", \"{MessageType.VIDEO_MESSAGE}\", \"{MessageType.LOCATION_MESSAGE}\", \"{MessageType.EMOJI_MESSAGE}\", \"{MessageType.IMAGE_MESSAGE}\""
+    include_message_type = [
+        MessageType.TEXT_MESSAGE,
+        MessageType.VOICE_MESSAGE,
+        MessageType.VIDEO_MESSAGE,
+        MessageType.LOCATION_MESSAGE,
+        MessageType.EMOJI_MESSAGE,
+        MessageType.IMAGE_MESSAGE,
+        MessageType.XML_MESSAGE,
+        MessageType.NOTICE_MESSAGE
+    ]
+    message_type = ', '.join(f'"{item}"' for item in include_message_type)
 
     # 处理时间戳或格式化时间
     time_condition = ""
@@ -72,6 +84,44 @@ def get_all_message(db_handle, wxid, include_image, start_time=None, end_time=No
     return result
 
 
+def xml_message_parse(compressed_content: str):
+    result = {
+        'content': '[未解析的XML消息]',
+        'type': None,
+        'ext_info': {}
+    }
+    try:
+        parse_result = parse_compressed_content(compressed_content)
+        prase_result_dict = xml_to_dict(parse_result)
+        app_msg = prase_result_dict.get('msg', {'appmsg': {}})
+        app_msg = app_msg.get('appmsg')
+        if app_msg.get('refermsg'):
+            original_message = app_msg.get('refermsg')
+            result['type'] = 'reply'
+            # result['content'] = f'回复[{original_message.get("displayname")}]:\n「{original_content}」\n----------\n{app_msg.get("title")}'
+            result['content'] = app_msg.get("title")
+            result['ext_info']['reply_msg_id'] = original_message.get('svrid')
+        elif app_msg.get('musicShareItem'):
+            result['type'] = 'music_share'
+            result['content'] = f'[分享音乐: {app_msg.get("musicShareItem").get("mvSingerName") or "未知歌手"} - {app_msg.get("title")}]'
+        else:
+            result['type'] = 'unknown'
+            result['content'] = f"[卡片消息: {app_msg.get('title', '[XML解析失败]')}]"
+    except Exception as e:
+        pass
+    return result
+
+
+def notice_message_parse(content: str):
+    if "<revokemsg>" in content:
+        content = f'[通知消息(撤回): {content.replace("<revokemsg>", "").replace("</revokemsg>", "")}]'
+    elif '加入了群聊' in content:
+        content = f'[通知消息(加入群聊): {content}]'
+    elif '拍了拍' in content:
+        content = f'[通知消息(拍一拍): {content}]'
+    else: content = f'[通知消息: {content}]'
+    return content
+
 def check_mention_list(bytes_extra: str):
     """
     检查bytesExtra中是否有@人
@@ -101,6 +151,13 @@ def check_mention_list(bytes_extra: str):
     mention_list = at_user_list.split(',')
     return mention_list
 
+def parse_location(content: str):
+    try:
+        parse_result = xml_to_dict(content)
+        location = parse_result.get('msg', {'location': {}}).get('location')
+        return f"[位置消息: {location.get('@label')}{location.get('@poiname')}]"
+    except Exception as e:
+        return '[位置消息]'
 
 def get_sender_form_room_msg(bytes_extra: str) -> str:
     """
@@ -170,7 +227,31 @@ def decode_img(message: TextMessageFromDB, save_dir, port=19001) -> str:
     return ""
 
 
-def get_talker_name(db_handle, wxid, port=19001) -> tuple[str, str, str]:
+def get_room_members(db_handle: str | int, room_id: str, port=19001):
+    body = {
+        'sql': f"SELECT RoomData FROM ChatRoom WHERE ChatRoomName=\"{room_id}\"",
+        'dbHandle': db_handle
+    }
+    chat_room_resp = post(f'http://127.0.0.1:{port}/api/execSql', json=body).json()
+    chat_room_data = chat_room_resp.get('data')[1] if len(chat_room_resp.get('data')) > 1 else [None]
+    chat_room_data = chat_room_data[0]
+
+    chat_room_members = {}
+
+    if chat_room_data:
+        chat_room_data = b64decode(chat_room_data)
+        chat_room_data_parse = ChatRoomData()
+        chat_room_data_parse.ParseFromString(chat_room_data)
+
+        for item in chat_room_data_parse.members:
+            room_member_wxid = item.wxID
+            room_member_display_name = item.displayName
+            chat_room_members[room_member_wxid] = {"display_name": room_member_display_name}
+
+    return chat_room_members
+
+
+def get_talker_name(db_handle: str | int, wxid, port=19001) -> tuple[str, str, str]:
     """
     从数据库获取微信用户的微信名
     :param db_handle: MicroMsg.db数据库句柄
@@ -183,13 +264,14 @@ def get_talker_name(db_handle, wxid, port=19001) -> tuple[str, str, str]:
     if not contact_list:
         body = {
             "dbHandle": db_handle,
-            "sql": f"SELECT ct.UserName, ct.Alias, ct.EncryptUserName, ct.Remark, ct.NickName, ct.LabelIDList, ct.PYInitial, ct.QuanPin, ct.Reserved1, ct.Reserved2, ct.VerifyFlag, ct.Type, ct.ExtraBuf, cth.bigHeadImgUrl, cth.smallHeadImgUrl FROM Contact AS ct LEFT JOIN ContactHeadImgUrl AS cth ON ct.UserName = cth.usrName"
+            # "sql": f"SELECT ct.Remark, ct.NickName, ct.LabelIDList, ct.PYInitial, ct.QuanPin, ct.Reserved1, ct.Reserved2, ct.VerifyFlag, ct.Type, ct.ExtraBuf, cth.bigHeadImgUrl, cth.smallHeadImgUrl FROM Contact AS ct LEFT JOIN ContactHeadImgUrl AS cth ON ct.UserName = cth.usrName"
+            "sql": "SELECT ct.UserName, ct.Remark, ct.NickName FROM Contact AS ct LEFT JOIN ContactHeadImgUrl AS cth ON ct.UserName = cth.usrName;"
         }
         resp = post(f'http://127.0.0.1:{port}/api/execSql', json=body).json()
 
         if resp.get('code') != 1:
             return '', '', ""
-
+                    
         contacts = resp.get('data')
         contacts_dict = {}
         for index, item in enumerate(contacts):
@@ -219,12 +301,12 @@ def get_talker_name(db_handle, wxid, port=19001) -> tuple[str, str, str]:
     #     "bigHeadImgUrl",
     #     "smallHeadImgUrl"
     # ]
-
-    remark, nick_name = result[3] if len(result) > 3 else "未知用户", result[4] if len(result) > 4 else "未知用户"
+    
+    remark, nick_name = result[1] if len(result) > 1 else "未知用户", result[2] if len(result) > 2 else "未知用户"
     return remark, nick_name, wxid
 
 
-def process_messages(msg_db_handle, micro_msg_db_handle, wxid, write_function: Callable,
+def process_messages(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, write_function: Callable,
                      include_image=False, start_time=None, end_time=None,
                      port=19001):
     """
@@ -251,7 +333,12 @@ def process_messages(msg_db_handle, micro_msg_db_handle, wxid, write_function: C
     if not path.exists(exports_path):
         from os import makedirs
         makedirs(exports_path)
+    is_room = '@chatroom' in wxid
 
+    room_members = {}
+    if is_room:
+        room_members = get_room_members(db_handle=micro_msg_db_handle, room_id=wxid, port=port)
+    
     for index, item in enumerate(data):
         message = TextMessageFromDB(*item)
         # 获取发送人名称
@@ -262,6 +349,11 @@ def process_messages(msg_db_handle, micro_msg_db_handle, wxid, write_function: C
         else:
             sender_id = get_sender_form_room_msg(message.BytesExtra) if message.room else message.StrTalker
             remark, nick_name, _ = get_talker_name(micro_msg_db_handle, sender_id, port)
+
+        if is_room:
+            member_info = room_members.get(sender_id, {'display_name': ''})
+            member_remark = member_info.get('display_name', remark)
+            remark = member_remark if member_remark else remark
 
         room = message.room
         mention_list = ""
@@ -279,11 +371,10 @@ def process_messages(msg_db_handle, micro_msg_db_handle, wxid, write_function: C
         mention_list = ' || '.join(mention_list)
         format_time = datetime.fromtimestamp(int(message.CreateTime)).strftime('%Y-%m-%d %H:%M:%S')
         message_content = image_path if message.Type == MessageType.IMAGE_MESSAGE and include_image else message.StrContent
-
         write_function(nick_name, remark, format_time, message_content, mention_list, room, message, sender_id)
 
 
-def write_doc(msg_db_handle, micro_msg_db_handle, wxid, doc_filename=None, include_image=False,
+def write_doc(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, doc_filename=None, include_image=False,
               port=19001, start_time=None, end_time=None):
     """
     将聊天记录写入docx文件中
@@ -359,7 +450,8 @@ def write_doc(msg_db_handle, micro_msg_db_handle, wxid, doc_filename=None, inclu
     return file_name
 
 
-def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
+
+def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filename=None,
               port=19001, file_type='json', endswith_txt=True, start_time=None, end_time=None, include_image=False):
     main_remark, main_username, _ = get_talker_name(micro_msg_db_handle, wxid, port=port)
     is_room = '@chatroom' in wxid
@@ -373,7 +465,9 @@ def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
                 "remark": "对消息发送人的备注，如果为空则代表该联系人没有备注",
                 "content": "具体的消息内容",
                 "time": "消息发送时间",
-                "wxid": "消息发送人的wxid，每个用户的唯一id，可以用来判断消息发送人是否是同一位。"
+                "wxid": "消息发送人的wxid，每个用户的唯一id，可以用来判断消息发送人是否是同一位。",
+                "msg_id": "消息的唯一ID",
+                "reply_msg_id": "当这条消息回复了另一条消息，则存放被回复的消息的msg_id，否则不展示这个字段。"
             }
         },
         "data": []
@@ -383,24 +477,53 @@ def write_txt(msg_db_handle, micro_msg_db_handle, wxid, filename=None,
 
     def callback(_nick_name, _remark, _format_time, _message_content, _mention_list, _room,
                  _original_message: TextMessageFromDB, sender_id=None):
+        
+        # 根据消息类型，获取对应的内容。表情包和图片描述解析违禁风险过大，暂时不做。
         content_types = {
-            MessageType.IMAGE_MESSAGE: "[图片]",
+            MessageType.IMAGE_MESSAGE: "[图片]",    # 可以通过GML 4V Flash描述图片，然后单独开一个本地db，把描述和msg_id关联。考虑到成本问题，暂时不做。 
             MessageType.VIDEO_MESSAGE: "[视频]",
             MessageType.TEXT_MESSAGE: _message_content,
             MessageType.VOICE_MESSAGE: "[语音]",
-            MessageType.LOCATION_MESSAGE: "[位置]",
-            MessageType.EMOJI_MESSAGE: "[动画表情]",
+            MessageType.LOCATION_MESSAGE: parse_location(_message_content),
+            MessageType.EMOJI_MESSAGE: "[动画表情]",    # 同样可以通过content字段的cndurl下载表情图片，GML 4V Flash描述图片用本地db存起来用标签的md5作为id，同样考虑成本问题暂时不做。
+            MessageType.XML_MESSAGE: "[未解析的XML消息]",
+            MessageType.NOTICE_MESSAGE: "[通知消息]",
         }
+
+        reply_msg_id = None
+
+        if _original_message.Type == MessageType.XML_MESSAGE:
+            xml_prese_result = xml_message_parse(_original_message.CompressContent)
+            content_types[MessageType.XML_MESSAGE] = xml_prese_result.get('content', '[未解析的XML消息]')
+            reply_msg_id = xml_prese_result.get('ext_info', {'reply_msg_id', None}).get('reply_msg_id')
+            if reply_msg_id:
+                for history in result['data'][::-1]:
+                    if history['msg_id'] == reply_msg_id:
+                        original_content = history.get("content") if len(history.get("content")) < 5 else f'{history.get("content")[0:5]} ...'
+                        content_types[MessageType.XML_MESSAGE] = f"回复[{history.get('sender')}]:\n「{original_content}」\n----------\n{content_types[MessageType.XML_MESSAGE]}"
+                        break
+        
+        if _original_message.Type == MessageType.NOTICE_MESSAGE:
+            content_types[MessageType.NOTICE_MESSAGE] = notice_message_parse(_original_message.content)
+            # 通知消息会有一部分消息获取不到wxid和名称，用微信团队兜底
+            if _nick_name == "未知用户" and not sender_id:
+                _nick_name, _remark = "微信团队", ""
+                sender_id = "weixin"
 
         item = {
             "sender": _nick_name,
             "remark": _remark,
             "content": content_types.get(_original_message.Type),
             "time": _format_time,
-            "wxid": sender_id
+            "wxid": sender_id,
+            "msg_id": _original_message.MsgSvrID,
         }
-        if _room: item['mentioned'] = _mention_list
+        
+        if _room and _mention_list: item['mentioned'] = _mention_list
+        if reply_msg_id: item['reply_msg_id'] = reply_msg_id
+
         result['data'].append(item)
+
 
     process_messages(
         msg_db_handle=msg_db_handle,
