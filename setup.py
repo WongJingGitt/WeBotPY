@@ -20,6 +20,8 @@ setup(
         "langchain_text_splitters",
         "langgraph-checkpoint-sqlite",
         "pydantic",
-        "langchain_core"
+        "langchain_core",
+        "xmltodict",
+        "lz4"
     ]
 )
