@@ -5,6 +5,7 @@ from os import path
 from typing import List, Dict, Callable, Union
 from dataclasses import asdict
 from uuid import uuid4
+import traceback
 
 from utils.project_path import CONFIG_PATH, ROOT_PATH
 from services.service_type import Response, Request
@@ -214,20 +215,23 @@ class ServiceMain(Flask):
                 
                 # 流式处理AI响应
                 for event, message in agent.chat({"messages": all_messages}):
+                    print('='*10, message, '='*10)
                     chunk = self._process_message_chunk(message, conversation_id, user_message_id=user_message_id, original_assistant_message=original_assistant_message)
                     if chunk:
                         yield f"data: {chunk}\n\n"
             except GeneratorExit as ge:
                 raise ge
             except Exception as e:
+                stack_trace = traceback.format_exc()
+                format_err = f'{str(e)}\n {stack_trace}'
                 self._save_message(
                     cid=conversation_id,
                     role="assistant",
-                    content=str(e),
+                    content=format_err,
                     message_id=str(uuid4()),
                     wechat_message_config=dumps({"type": "error", "message": "后端出错"}),
                 )
-                yield f"""data: {dumps([{'role': 'assistant', 'content': str(e), 'wechat_message_config': '{"type": "error", "message": "后端出错"}'}])}\n\n"""
+                yield f"""data: {dumps([{'role': 'assistant', 'content': format_err, 'wechat_message_config': '{"type": "error", "message": "后端出错"}'}])}\n\n"""
             finally:
                 yield "data: [DONE]\n\n"
 
@@ -257,7 +261,9 @@ class ServiceMain(Flask):
         if 'agent' in message:
             for msg in message['agent']['messages']:
                 message_id = str(uuid4())
-                
+                content = msg.content
+                if isinstance(content, list):
+                    content = ''.join(content)
                 # 使用getattr判断tool_calls是否存在且非空
                 tool_calls = []
                 if getattr(msg, 'tool_calls', None):
@@ -275,7 +281,7 @@ class ServiceMain(Flask):
                 # 保存agent消息及其工具调用信息
                 self._save_message(
                     cid=conversation_id,
-                    content=msg.content,
+                    content=content,
                     role='assistant' if len(tool_calls) == 0 else 'tools',
                     message_id=message_id,
                     wechat_message_config=dumps({
@@ -289,7 +295,7 @@ class ServiceMain(Flask):
                     "message_id": message_id,
                     "conversation_id": conversation_id,
                     "timestamp": get_timestamp(),
-                    "content": msg.content,
+                    "content": content,
                     'role': 'assistant' if len(tool_calls) == 0 else 'tools',
                     "wechat_message_config": dumps({
                         'tools': tool_calls,
@@ -301,11 +307,13 @@ class ServiceMain(Flask):
         elif 'tools' in message:
             for msg in message['tools']['messages']:
                 message_id = str(uuid4())
-                
+                content = msg.content
+                if isinstance(content, list):
+                    content = ''.join(content)
                 tool_result = {
                     "call_id": msg.tool_call_id,
                     "tool_name": msg.name,
-                    "result": msg.content,
+                    "result": content,
                     "success": True,  # 根据实际业务可调整判断逻辑
                     "timestamp": get_timestamp(),
                     "type": 'tool_result'
@@ -313,7 +321,7 @@ class ServiceMain(Flask):
 
                 self._save_message(
                     cid=conversation_id,
-                    content=msg.content,
+                    content=content,
                     role='tools',
                     message_id=message_id,
                     wechat_message_config=dumps({
@@ -340,6 +348,8 @@ class ServiceMain(Flask):
 
     def _save_message(self, cid, content, role='assistant', wechat_message_config='', message_id=str(uuid4())):
         """保存消息到数据库"""
+        if isinstance(wechat_message_config, dict) or isinstance(wechat_message_config, list):
+            wechat_message_config = dumps(wechat_message_config)
         self._conversions_database.add_message(
             conversation_id=cid,
             role=role,
