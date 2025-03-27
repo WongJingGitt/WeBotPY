@@ -1,5 +1,5 @@
 from databases.local_database import LocalDatabase
-
+from databases.database_type import MemoryEventType
 
 class LLMConfigDatabase(LocalDatabase):
 
@@ -247,3 +247,114 @@ class LLMConfigDatabase(LocalDatabase):
         WHERE model_id = ? AND apikey_id IS NOT NULL
         """, (model_id,))
         return result.fetchone() is not None
+    
+
+class MemoryDatabase(LocalDatabase):
+    def __init__(self, db_name: str="memory_database", *args, **kwargs):
+        super().__init__(db_name)
+        self._create_table()
+    
+    def _create_table(self):
+        """
+        from_user: 记忆归属者主账号，也就是属于哪个登录的账户，传wxid。
+        to_user: 记忆的对象，也就是关于谁的记忆，传wxid在获取该用户的聊天时传入。
+        type: 记忆类型，目前规划：
+            - event: 重要事件记录
+            - topic: 长期话题记录
+            - social_network: 成员关系网(针对群聊)
+            - nickname: 别称记录。
+            - keyword: 高频关键字记录与解释。
+            - summary: 针对群聊的额外总结。
+        event_time: 事件发生时间。
+        """
+        sql = """
+CREATE TABLE IF NOT EXISTS memory (
+    memory_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_user TEXT,
+    to_user TEXT,
+    type TEXT,
+    content TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    event_time DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+"""
+        self.execute_query(sql, commit=True)
+
+    
+    def add_memory(self, from_user: str, to_user: str, type: str, content: str, event_time: str = None) -> int:
+        """
+        添加一条记忆记录。
+        :param from_user: 记忆归属者主账号，也就是属于哪个登录的账户，传wxid。
+        :param to_user: 记忆的对象，也就是关于谁的记忆，传wxid在获取该用户的聊天时传入。
+        :param type: 记忆类型，目前规划：
+            - event: 重要事件记录
+            - topic: 长期话题记录
+            - social_network: 成员关系网(针对群聊)
+            - nickname: 别称记录。
+            - keyword: 高频关键字记录与解释。
+            - summary: 针对群聊的额外总结。
+        :param content: 记忆内容。
+        :return: 记忆ID。
+        """
+        sql = """
+INSERT INTO memory (from_user, to_user, type, content, event_time) VALUES (?, ?, ?, ?, ?)
+"""
+        result = self.execute_query(sql, (from_user, to_user, type, content, event_time), commit=True)
+        return result.lastrowid
+    
+    def get_memory(self, from_user: str, to_user: str, type: str = None, event_time: str = None) -> list:
+        """
+        获取记忆记录。
+        :param from_user: 记忆归属者主账号，也就是属于哪个登录的账户，传wxid。
+        :param to_user: 记忆的对象，也就是关于谁的记忆，传wxid在获取该用户的聊天时传入。
+        :param type: 记忆类型，目前规划：
+            - event: 重要事件记录
+            - topic: 长期话题记录
+            - social_network: 成员关系网(针对群聊)
+            - nickname: 别称记录。
+            - keyword: 高频关键字记录与解释。
+            - summary: 针对群聊的额外总结。
+        :param event_time: 事件发生时间。
+        :return: 记忆记录列表。
+        """
+        sql = """
+SELECT memory_id, type, content, event_time, created_at FROM memory WHERE from_user = ? AND to_user = ?
+"""
+        if type:
+            sql += " AND type = ?"
+            params = (from_user, to_user, type)
+        else:
+            params = (from_user, to_user)
+
+        if event_time:
+            sql += " AND event_time = ?"
+            params += (event_time,)
+        result = self.execute_query(sql, params)
+        return result.fetchall()
+
+    def delete_memory(self, memory_id: int) -> None:
+        """
+        删除一条记忆记录。
+        :param memory_id: 记忆ID。
+        """
+        sql = """
+DELETE FROM memory WHERE memory_id = ?
+"""
+        self.execute_query(sql, (memory_id,), commit=True)
+
+
+    def update_memory(self, memory_id: int, content: str) -> None:
+        """
+        更新一条记忆记录。
+        :param memory_id: 记忆ID。
+        :param content: 记忆内容。
+        """
+        sql = """
+UPDATE memory SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE memory_id = ?
+"""
+        self.execute_query(sql, (content, memory_id), commit=True)
+
+        return
+    
+
