@@ -11,6 +11,7 @@ from utils.project_path import DATA_PATH
 from utils.compress_content_praser import parse_compressed_content
 from utils.toolkit import xml_to_dict
 from utils.room_data_pb2 import ChatRoomData
+from databases.global_config_database import MemoryDatabase
 
 from requests import post
 from docx import Document
@@ -172,6 +173,17 @@ def get_sender_form_room_msg(bytes_extra: str) -> str:
         if item.field1 == 1:
             return item.field2
     return ""
+
+
+def get_memory(from_user, to_user):
+    db = MemoryDatabase()
+    memories = db.get_memory(
+        from_user=from_user,
+        to_user=to_user
+    )
+    print(memories)
+    return [ { "type": item[1], "content": item[2], "event_time": item[3] } for item in memories]
+    
 
 
 def decode_img(message: TextMessageFromDB, save_dir, port=19001) -> str:
@@ -453,9 +465,11 @@ def write_doc(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, doc_fil
 
 def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filename=None,
               port=19001, file_type='json', endswith_txt=True, start_time=None, end_time=None, include_image=False):
+    
+    user_info = post(f'http://127.0.0.1:{port}/api/userInfo').json().get('data')
     main_remark, main_username, _ = get_talker_name(micro_msg_db_handle, wxid, port=port)
     is_room = '@chatroom' in wxid
-
+    memories = get_memory(from_user=user_info.get('wxid'), to_user=wxid)
     result = {
         "meta": {
             "description": f'聊天记录的数据结构定义',
@@ -468,13 +482,16 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
                 "wxid": "消息发送人的wxid，每个用户的唯一id，可以用来判断消息发送人是否是同一位。",
                 "msg_id": "消息的唯一ID",
                 "reply_msg_id": "当这条消息回复了另一条消息，则存放被回复的消息的msg_id，否则不展示这个字段。"
+            },
+            "context": {
+                "decription": "当前聊天的重要上下文信息，可供参考。",
+                "context": memories
             }
         },
         "data": []
     }
 
     if is_room: result['meta']['field']['mentioned'] = "消息中提及到的用户，如果为空则代表这条消息没有提及任何人"
-
     def callback(_nick_name, _remark, _format_time, _message_content, _mention_list, _room,
                  _original_message: TextMessageFromDB, sender_id=None):
         
@@ -555,3 +572,4 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
             fa.write('\n')
             fa.write(yaml.dump({"data": result.get('data')}, allow_unicode=True))
         return file_path
+    
