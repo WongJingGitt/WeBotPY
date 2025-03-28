@@ -182,7 +182,7 @@ def get_memory(from_user, to_user):
         to_user=to_user
     )
     print(memories)
-    return [ { "type": item[1], "content": item[2], "event_time": item[3] } for item in memories]
+    return [ { "type": item[1], "content": item[2], "event_time": item[3], "wxid": to_user } for item in memories]
     
 
 
@@ -484,8 +484,8 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
                 "reply_msg_id": "当这条消息回复了另一条消息，则存放被回复的消息的msg_id，否则不展示这个字段。"
             },
             "context": {
-                "decription": "当前聊天的重要上下文信息，可供参考。",
-                "context": memories
+                "description": "AI生成辅助上下文（根据历史消息动态推断得出），仅用于理解对话隐含信息，禁止直接输出到最终结论中。",
+                "memories": memories
             }
         },
         "data": []
