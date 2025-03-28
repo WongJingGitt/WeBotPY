@@ -5,9 +5,10 @@ from typing import List, Dict, Any
 from langchain_core.tools import StructuredTool
 from requests import post
 
-from bot.write_doc import write_txt
+from bot.write_doc import write_txt, get_memory
 from tool_call.tools_types import CurrentTimeResult, GetContentInput, ContentResult, UserInfoResult, GetUserInfoInput, \
-    GetMessageByWxidAndTimeInput, SendTextMessageInput
+    GetMessageByWxidAndTimeInput, SendTextMessageInput, GetMemoriesInput, GetMemoriesResult, AddMemoryInput
+from databases.global_config_database import MemoryDatabase
 
 
 def get_current_time() -> CurrentTimeResult:
@@ -118,6 +119,24 @@ def send_text_message(port, wxid, message):
     ).json()
 
 
+def get_memories(wxid: str, port: int) -> List[GetMemoriesResult]:
+    user_info = get_user_info(port=port)
+    from_user = user_info.wxid
+    return get_memory(from_user=from_user, to_user=wxid)
+
+def add_memory(wxid: str, port: int, content: str, type: str, event_time: str):
+    user_info = get_user_info(port=port)
+    md = MemoryDatabase()
+    return md.add_memory(
+        from_user=user_info.wxid,
+        to_user=wxid,
+        content=content,
+        type=type,
+        event_time=event_time
+    )
+    
+
+
 ALL_TOOLS = [
     StructuredTool.from_function(
         name="get_current_time",
@@ -191,5 +210,26 @@ ALL_TOOLS = [
         description="""
 一个用作导出聊天记录文件的工具函数，传入wxid与时间范围，将聊天记录导出为txt文件保存在本地，并且返回文件的绝对路径。**注意：只有用户明确表明了”导出/提取/保存/下载“相关的意图时才可以调用这个工具。**
 """
+    ),
+    StructuredTool.from_function(
+        name="get_memories",
+        func=get_memories,
+        args_schema=GetMemoriesInput,
+        description="""
+获取当前用户的所有记忆，主要存放联系人、群聊的各种记忆，用作协助AI进行总结聊天记录。以下是字段解释：
+    - `content`：记忆的内容，例如："记忆的内容。"。
+    - `type`：记忆的类型，内容仅会限定在：'event', 'topic', 'social_network', 'nickname', 'keyword', 'summary'之一。。
+    - `event_time`：记忆的事件时间，例如："2023-01-01 00:00:00"。
+    - `wxid`: 这份记忆主体对象的wxid，如果是关于群聊或者群成员的记忆，这里应该传递群聊的wxid。
+"""
+    ),
+    StructuredTool.from_function(
+        name="add_memory",
+        func=add_memory,
+        args_schema=AddMemoryInput,
+        description=""""
+添加记忆的函数，添加一条记忆。
+"""
     )
+
 ]

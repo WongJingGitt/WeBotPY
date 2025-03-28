@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from databases.database_type import MemoryEventType
 
 
 class CurrentTimeResult(BaseModel):
@@ -50,3 +51,23 @@ class SendTextMessageInput(BaseModel):
     port: int | float = Field(..., description="当前微信的Port，格式为int，整数。")
     wxid: str = Field(..., description="消息接收人的wxid，例如：\"wxid_abcdefg123456\"。")
     message: str = Field(..., description="要发送的文本消息，例如：\"Hello World!\"。")
+
+
+class GetMemoriesInput(BaseModel):
+    wxid: str = Field(..., description="这份记忆主体对象的wxid，如果是关于群聊或者群成员的记忆，这里应该传递群聊的wxid。")
+    port: int = Field(..., description="当前微信的Port。")
+
+
+class GetMemoriesResult(BaseModel):
+    type: MemoryEventType = Field(..., description="记忆的类型。内容仅会限定在：'event', 'topic', 'social_network', 'nickname', 'keyword', 'summary'之一。")
+    content: str = Field(..., description="记忆的内容。")
+    event_time: str | None = Field(default=None, description="记忆的事件发生时间，通常只有event才会记录。")
+    wxid: str = Field(..., description="记忆主体对象的wxid，如果是关于群聊或者群成员的记忆，这里应该会是群聊的wxid。")
+
+
+class AddMemoryInput(BaseModel):
+    wxid: str = Field(..., description="这份记忆主体对象的wxid，如果是关于群聊或者群成员的记忆，这里应该传递群聊的wxid。")
+    port: int = Field(..., description="当前微信的Port。")
+    type: MemoryEventType = Field(..., description="记忆的类型。在以下选项中选择一项：'event', 'topic', 'social_network', 'nickname', 'keyword', 'summary'")
+    content: str = Field(..., description="记忆的内容。")
+    event_time: str | None = Field(default=None, description="记忆的事件发生时间，通常只有event才会记录。")
