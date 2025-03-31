@@ -39,7 +39,8 @@ def get_all_message(db_handle: list, wxid, include_image, start_time=None, end_t
         MessageType.EMOJI_MESSAGE,
         MessageType.IMAGE_MESSAGE,
         MessageType.XML_MESSAGE,
-        MessageType.NOTICE_MESSAGE
+        MessageType.NOTICE_MESSAGE,
+        MessageType.CARD_MESSAGE
     ]
     message_type = ', '.join(f'"{item}"' for item in include_message_type)
 
@@ -91,23 +92,62 @@ def xml_message_parse(compressed_content: str):
         'type': None,
         'ext_info': {}
     }
+
+    # 处理引用回复消息
+    def refer_msg(app_msg: dict):
+        original_message = app_msg.get('refermsg')
+        result['type'] = 'reply'
+        # result['content'] = f'回复[{original_message.get("displayname")}]:\n「{original_content}」\n----------\n{app_msg.get("title")}'
+        result['content'] = app_msg.get("title")
+        result['ext_info']['reply_msg_id'] = original_message.get('svrid')
+
+    def music_share(app_msg: dict):
+        result['type'] = 'music_share'
+        result['content'] = f'[分享音乐: {app_msg.get("des") or "未知歌手"} - {app_msg.get("title")}]'
+
+
+    def mini_program(app_msg: dict):
+        result['type'] = 'mini_program'
+        result['content'] = f'[小程序: {app_msg.get("sourcedisplayname", "未知小程序")}]\n{app_msg.get("title")}'
+
+
+    def chat_history(app_msg: dict):
+        result['type'] = 'chat_history'
+        result['content'] = f'[聊天记录：{app_msg.get("title")}]\n{app_msg.get("des")}'
+
+    
+    def video_message(app_msg: dict):
+        result['type'] = 'video_message'
+        result['content'] = f'[视频链接: {app_msg.get("title")}]\n{app_msg.get("des")}'
+
+    def web_view(app_msg: dict):
+        result['type'] = 'web_view'
+        result['content'] = f'[网页链接: {app_msg.get("title")}]\n{app_msg.get("des")}'
+        if app_msg.get('sourcedisplayname'):
+            result['content'] += f'\n来源: {app_msg.get("sourcedisplayname")}'
+
+    def default_message(app_msg: dict):
+        result['type'] = 'default'
+        result['content'] = f'[卡片消息: {app_msg.get("title")}]'
+
     try:
         parse_result = parse_compressed_content(compressed_content)
         prase_result_dict = xml_to_dict(parse_result)
         app_msg = prase_result_dict.get('msg', {'appmsg': {}})
         app_msg = app_msg.get('appmsg')
-        if app_msg.get('refermsg'):
-            original_message = app_msg.get('refermsg')
-            result['type'] = 'reply'
-            # result['content'] = f'回复[{original_message.get("displayname")}]:\n「{original_content}」\n----------\n{app_msg.get("title")}'
-            result['content'] = app_msg.get("title")
-            result['ext_info']['reply_msg_id'] = original_message.get('svrid')
-        elif app_msg.get('musicShareItem'):
-            result['type'] = 'music_share'
-            result['content'] = f'[分享音乐: {app_msg.get("musicShareItem").get("mvSingerName") or "未知歌手"} - {app_msg.get("title")}]'
-        else:
-            result['type'] = 'unknown'
-            result['content'] = f"[卡片消息: {app_msg.get('title', '[XML解析失败]')}]"
+        original_msg_type = app_msg.get('type')
+        content_dict = {
+            "57": refer_msg,
+            "3": music_share,
+            "92": music_share,
+            "33": mini_program,
+            "19": chat_history,
+            "4": video_message,
+            "5": web_view
+        } 
+        
+        content_dict.get(original_msg_type, default_message)(app_msg)
+
     except Exception as e:
         pass
     return result
@@ -115,12 +155,12 @@ def xml_message_parse(compressed_content: str):
 
 def notice_message_parse(content: str):
     if "<revokemsg>" in content:
-        content = f'[通知消息(撤回): {content.replace("<revokemsg>", "").replace("</revokemsg>", "")}]'
+        content = f'[通知消息: 撤回]\n{content.replace("<revokemsg>", "").replace("</revokemsg>", "")}'
     elif '加入了群聊' in content:
-        content = f'[通知消息(加入群聊): {content}]'
+        content = f'[通知消息: 加入群聊]\n{content}'
     elif '拍了拍' in content:
-        content = f'[通知消息(拍一拍): {content}]'
-    else: content = f'[通知消息: {content}]'
+        content = f'[通知消息: 拍一拍]\n{content}'
+    else: content = f'[通知消息: 未知类型]\n{content}'
     return content
 
 def check_mention_list(bytes_extra: str):
@@ -159,6 +199,15 @@ def parse_location(content: str):
         return f"[位置消息: {location.get('@label')}{location.get('@poiname')}]"
     except Exception as e:
         return '[位置消息]'
+    
+def card_message_parse(content: str):
+    try:
+        parse_result = xml_to_dict(content)
+        card_info = parse_result.get('msg', {'@nickname': "未知名片"})
+        return f"[名片消息: {card_info.get('@nickname')}]"
+    except Exception as e:
+        print(e)
+        return '[名片消息]'
 
 def get_sender_form_room_msg(bytes_extra: str) -> str:
     """
@@ -181,7 +230,6 @@ def get_memory(from_user, to_user):
         from_user=from_user,
         to_user=to_user
     )
-    print(memories)
     return [ { "type": item[1], "content": item[2], "event_time": item[3], "wxid": to_user } for item in memories]
     
 
@@ -370,17 +418,16 @@ def process_messages(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, 
         room = message.room
         mention_list = ""
 
-        if room:
+        if room and '@' in message.StrContent:
             # 获取提及人名称
             mention_list = check_mention_list(message.BytesExtra)
             mention_list = [get_talker_name(micro_msg_db_handle, user_id, port) for user_id in mention_list if user_id]
-            mention_list = [f"{_nick_name}({_remark})[{_wxid}]" if _remark else f"{_nick_name}[{_wxid}]" for _remark, _nick_name, _wxid in
+            mention_list = [{"name": _nick_name, "wxid": _wxid} for _remark, _nick_name, _wxid in
                             mention_list]
 
         if message.Type == MessageType.IMAGE_MESSAGE and include_image:
             image_path = decode_img(message, path.join(DATA_PATH, 'images'), port=port)
 
-        mention_list = ' || '.join(mention_list)
         format_time = datetime.fromtimestamp(int(message.CreateTime)).strftime('%Y-%m-%d %H:%M:%S')
         message_content = image_path if message.Type == MessageType.IMAGE_MESSAGE and include_image else message.StrContent
         write_function(nick_name, remark, format_time, message_content, mention_list, room, message, sender_id)
@@ -475,13 +522,28 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
             "description": f'聊天记录的数据结构定义',
             "notes": f'这是一份微信{"群聊" if is_room else "私聊"}聊天记录',
             "field": {
-                "sender": "消息发送人，其中同名的发送人代表同一个人发送的消息",
+                "sender": "消息发送人的名称。，其中同名的发送人代表同一个人发送的消息",
                 "remark": "对消息发送人的备注，如果为空则代表该联系人没有备注",
-                "content": "具体的消息内容",
+                "content": """
+消息的具体内容, 主要包含以下形式：
+1. 文本消息：直接展示内容。
+    例如："你好"
+2. 特殊消息：由`[主类型: 子类型||标题]\n额外描述`组成。
+    例如：
+        - "[网页链接: 香港最新真实收入曝光！]\n来源: 景鸿移民"。
+        - "[小程序: 瑞幸咖啡]\n来杯咖啡..."
+        - "[分享音乐: 陶喆 - 爱我还是他]"
+        - "[聊天记录: 群聊的聊天记录]\n张三: 你好\n李四: 你也好"
+        - "[视频链接: 林俊杰《起风了》]\nUP主：大虾试车真香\n播放：50.3万"
+        - "[位置消息: 深圳市南山区xxxxx]"
+        - "[名片消息: 张三]"
+        - "[引用消息：张三 回复 李四]\n原始消息(部分): 「今天天气真好好！」\n回复内容: 是啊！"
+        - "[通知消息：拍一拍]\n张三 拍了拍 李四" || "[通知消息: 撤回]\n张三撤回了一条消息" || "[通知消息: 邀请]\n张三邀请李四进入群聊"
+""",
                 "time": "消息发送时间",
                 "wxid": "消息发送人的wxid，每个用户的唯一id，可以用来判断消息发送人是否是同一位。",
                 "msg_id": "消息的唯一ID",
-                "reply_msg_id": "当这条消息回复了另一条消息，则存放被回复的消息的msg_id，否则不展示这个字段。"
+                "reply_msg_id": "当这条消息引用(回复)了另一条消息，则存放被引用(回复)的消息的msg_id，否则不展示这个字段。"
             },
             "context": {
                 "description": "AI生成辅助上下文（根据历史消息动态推断得出），仅用于理解对话隐含信息，禁止直接输出到最终结论中。",
@@ -491,7 +553,7 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
         "data": []
     }
 
-    if is_room: result['meta']['field']['mentioned'] = "消息中提及到的用户，如果为空则代表这条消息没有提及任何人"
+    if is_room: result['meta']['field']['mentioned'] = "消息中提及到的用户，如果为空则代表这条消息没有提及任何人。格式为：[{'name': '被提及人名称', 'wxid': '被提及人wxid'}]"
     def callback(_nick_name, _remark, _format_time, _message_content, _mention_list, _room,
                  _original_message: TextMessageFromDB, sender_id=None):
         
@@ -501,7 +563,7 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
             MessageType.VIDEO_MESSAGE: "[视频]",
             MessageType.TEXT_MESSAGE: _message_content,
             MessageType.VOICE_MESSAGE: "[语音]",
-            MessageType.LOCATION_MESSAGE: parse_location(_message_content),
+            MessageType.LOCATION_MESSAGE: "[位置消息]",
             MessageType.EMOJI_MESSAGE: "[动画表情]",    # 同样可以通过content字段的cndurl下载表情图片，GML 4V Flash描述图片用本地db存起来用标签的md5作为id，同样考虑成本问题暂时不做。
             MessageType.XML_MESSAGE: "[未解析的XML消息]",
             MessageType.NOTICE_MESSAGE: "[通知消息]",
@@ -516,16 +578,22 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
             if reply_msg_id:
                 for history in result['data'][::-1]:
                     if history['msg_id'] == reply_msg_id:
-                        original_content = history.get("content") if len(history.get("content")) < 5 else f'{history.get("content")[0:5]} ...'
-                        content_types[MessageType.XML_MESSAGE] = f"回复[{history.get('sender')}]:\n「{original_content}」\n----------\n{content_types[MessageType.XML_MESSAGE]}"
+                        original_content = history.get("content") if len(history.get("content")) < 10 else f'{history.get("content")[0:5]} ...'
+                        content_types[MessageType.XML_MESSAGE] = f"[引用消息：{_nick_name} 回复 {history.get('sender')}]\n原始消息(部分): 「{original_content}」\n回复内容(完整): {content_types[MessageType.XML_MESSAGE]}"
                         break
         
-        if _original_message.Type == MessageType.NOTICE_MESSAGE:
+        elif _original_message.Type == MessageType.NOTICE_MESSAGE:
             content_types[MessageType.NOTICE_MESSAGE] = notice_message_parse(_original_message.content)
             # 通知消息会有一部分消息获取不到wxid和名称，用微信团队兜底
             if _nick_name == "未知用户" and not sender_id:
                 _nick_name, _remark = "微信团队", ""
                 sender_id = "weixin"
+
+        elif _original_message.Type == MessageType.CARD_MESSAGE:
+            content_types[MessageType.CARD_MESSAGE] = card_message_parse(_original_message.content)
+
+        elif _original_message.Type == MessageType.LOCATION_MESSAGE:
+            content_types[MessageType.LOCATION_MESSAGE] = parse_location(_message_content)
 
         item = {
             "sender": _nick_name,
@@ -573,3 +641,4 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
             fa.write(yaml.dump({"data": result.get('data')}, allow_unicode=True))
         return file_path
     
+
