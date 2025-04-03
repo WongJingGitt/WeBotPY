@@ -182,7 +182,7 @@ ALL_TOOLS = [
         func=get_message_by_wxid_and_time,
         args_schema=GetMessageByWxidAndTimeInput,
         description="""
-一个用作获取聊天记录的工具函数，传入wxid与时间范围，返回一个聊天记录字典，具体字段说明：
+一个用作获取聊天记录的工具函数，传入wxid与时间范围，返回一个聊天记录字典。使用前需要先通过`get_contact`获取联系人信息、`get_current_time`获取当前时间进行时间推断。具体字段说明：
     - `meta`：聊天记录的数据结构定义
     - `data`：聊天记录的具体数据，是一个列表，列表中的每个元素是一个字典，包含以下字段：
         - `sender`：这条消息发送者的微信名。
@@ -208,7 +208,7 @@ ALL_TOOLS = [
         func=export_message,
         args_schema=GetMessageByWxidAndTimeInput,
         description="""
-一个用作导出聊天记录文件的工具函数，传入wxid与时间范围，将聊天记录导出为txt文件保存在本地，并且返回文件的绝对路径。**注意：只有用户明确表明了”导出/提取/保存/下载“相关的意图时才可以调用这个工具。**
+一个用作导出聊天记录文件的工具函数，传入wxid与时间范围，将聊天记录导出为txt文件保存在本地，并且返回文件的绝对路径。使用前需要先通过`get_contact`获取联系人信息、`get_current_time`获取当前时间进行时间推断。**注意：只有用户明确表明了”导出/提取/保存/下载“相关的意图时才可以调用这个工具。**
 """
     ),
     StructuredTool.from_function(
@@ -216,7 +216,7 @@ ALL_TOOLS = [
         func=get_memories,
         args_schema=GetMemoriesInput,
         description="""
-获取当前用户的所有记忆，主要存放联系人、群聊的各种记忆，用作协助AI进行总结聊天记录。以下是字段解释：
+获取当前用户的所有记忆，主要存放联系人、群聊的各种记忆，用作协助AI进行总结聊天记录。使用前需要先通过`get_contact`获取联系人信息。以下是字段解释：
     - `content`：记忆的内容，例如："记忆的内容。"。
     - `type`：记忆的类型，内容仅会限定在：'event', 'topic', 'social_network', 'nickname', 'keyword', 'summary'之一。。
     - `event_time`：记忆的事件时间，例如："2023-01-01 00:00:00"。
@@ -228,7 +228,7 @@ ALL_TOOLS = [
         func=add_memory,
         args_schema=AddMemoryInput,
         description=""""
-添加记忆的函数，添加一条记忆。
+添加记忆的函数，添加一条记忆。使用前需要先通过`get_contact`获取联系人信息、`get_current_time`获取当前时间进行时间推断。如果用户没有提及事件时间需要把`event_time`设置为`None`
 """
     )
 
