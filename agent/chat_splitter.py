@@ -370,30 +370,29 @@ class ChatAnalyzerAgent:
         return final_state
 
 # TODO: 
-# 1. 增加任务表格绑定拓展断点重试
-# 2. 使用 Celery 或 RQ创建任务队列系统 `pip install celery redis`
-# 3. 最后融合总结时，若是得出的chunk总结又超出了融合模型的最大输入。又要分块？
-    # CREATE TABLE IF NOT EXISTS long_tasks (
-    #     task_id TEXT PRIMARY KEY,              -- 任务唯一ID (建议使用 UUID)
-    #     conversation_id TEXT NOT NULL,         -- 对应前端的对话 ID
-    #     triggering_message_id TEXT,            -- 触发此任务的用户消息 ID (可选)
-    #     user_query TEXT NOT NULL,              -- 用户的原始请求
-    #     input_data_ref TEXT,                   -- 指向输入数据的方式 (例如: 文件路径, S3 key, 或直接存储小输入的 JSON)
-    #     status TEXT NOT NULL CHECK(status IN ('PENDING', 'PLANNING', 'CHUNKING', 'EXTRACTING', 'SYNTHESIZING', 'COMPLETED', 'FAILED', 'PAUSED')), -- 任务状态
-    #     current_step TEXT,                     -- 当前或最后成功完成的 LangGraph 节点名 (可选)
-    #     total_chunks INTEGER,                  -- 总分块数 (可选, 用于进度显示)
-    #     processed_chunk_index INTEGER DEFAULT -1, -- 最后成功处理的块的索引 (从0开始, -1表示还未开始)
-    #     intermediate_results TEXT,             -- 存储累积的提取结果 (例如: JSON 格式的列表)
-    #     final_answer TEXT,                     -- 最终生成的答案
-    #     error_message TEXT,                    -- 记录错误信息
-    #     retry_count INTEGER DEFAULT 0,         -- 重试次数
-    #     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    #     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    # );
-
-    # -- 可以为 conversation_id 创建索引以加速查询
-    # CREATE INDEX IF NOT EXISTS idx_conversation_id ON long_tasks (conversation_id);
-# 4. 考虑把intermediate_results指向到JSONL中，优化SQLite的性能
+#   1. 增加任务表格绑定拓展断点重试
+#   2. 使用 Celery 或 RQ创建任务队列系统 `pip install celery redis`
+#   3. 最后融合总结时，若是得出的chunk总结又超出了融合模型的最大输入。又要分块？
+#       CREATE TABLE IF NOT EXISTS long_tasks (
+#             task_id TEXT PRIMARY KEY,              -- 任务唯一ID (建议使用 UUID)
+#             conversation_id TEXT NOT NULL,         -- 对应前端的对话 ID
+#             triggering_message_id TEXT,            -- 触发此任务的用户消息 ID (可选)
+#             user_query TEXT NOT NULL,              -- 用户的原始请求
+#             input_data_ref TEXT,                   -- 指向输入数据的方式 (例如: 文件路径, S3 key, 或直接存储小输入的 JSON)
+#             status TEXT NOT NULL CHECK(status IN ('PENDING', 'PLANNING', 'CHUNKING', 'EXTRACTING', 'SYNTHESIZING', 'COMPLETED', 'FAILED', 'PAUSED')), -- 任务状态
+#             current_step TEXT,                     -- 当前或最后成功完成的 LangGraph 节点名 (可选)
+#             total_chunks INTEGER,                  -- 总分块数 (可选, 用于进度显示)
+#             processed_chunk_index INTEGER DEFAULT -1, -- 最后成功处理的块的索引 (从0开始, -1表示还未开始)
+#             intermediate_results TEXT,             -- 存储累积的提取结果 (例如: JSON 格式的列表)
+#             final_answer TEXT,                     -- 最终生成的答案
+#             error_message TEXT,                    -- 记录错误信息
+#             retry_count INTEGER DEFAULT 0,         -- 重试次数
+#             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+#             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+#         );
+#         -- 可以为 conversation_id 创建索引以加速查询
+#         CREATE INDEX IF NOT EXISTS idx_conversation_id ON long_tasks (conversation_id);
+#   4. 考虑把intermediate_results指向到JSONL中，优化SQLite的性能
 
 
 if __name__ == "__main__":
