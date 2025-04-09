@@ -56,7 +56,7 @@ class LLMFactory:
 
         return ChatGoogleGenerativeAI(
             api_key=SecretStr(api_key),
-            model=model,
+            model=model, max_retries=10
             *args,
             **kwargs,
         )
