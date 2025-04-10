@@ -11,25 +11,25 @@ from langgraph.graph import StateGraph, END
 
 from llm.llm import LLMFactory
 
-# --- 1. Define State (outside the class) ---
+# --- 1. 定义状态（类外部） ---
 class AgentState(TypedDict):
     input_dict: Dict[str, Any]      # 原始聊天记录字典
     user_query: str                 # 用户的原始问题
-    # --- Query Understanding ---
+    # --- 查询理解 ---
     intent: Optional[str]           # 推断的用户意图
     entities: Optional[Dict]        # 提取的关键实体
     chunk_processing_prompt: Optional[str] # 动态生成的用于处理块的 Prompt
-    # --- Chunking ---
+    # --- 分块 ---
     messages: List[Dict]            # 从 input_dict 提取的原始消息列表
     message_chunks: List[List[Dict]]# 分块后的消息列表
-    # --- Extraction ---
+    # --- 提取 ---
     extracted_data: List[str]       # 从各块提取的信息列表
-    # --- Final Answer ---
+    # --- 最终答案 ---
     final_answer: Optional[str]     # 最终给用户的答案
-    # --- Error Handling ---
+    # --- 错误处理 ---
     error_message: Optional[str]    # 记录处理过程中的错误
 
-# --- 2. Define the Agent Class ---
+# --- 2. 定义Agent类 ---
 class ChatAnalyzerAgent:
     """
     一个使用 LangGraph 构建的 Agent，用于分析长聊天记录并回答特定问题。
@@ -78,7 +78,7 @@ class ChatAnalyzerAgent:
         # 构建并编译 LangGraph 应用
         self.app = self._build_graph()
 
-    # --- Helper Methods ---
+    # --- 辅助方法 ---
     def _format_single_message_for_llm(self, message: Dict) -> str:
         """将单条消息字典格式化为简洁的字符串表示。"""
         sender = message.get('sender', 'Unknown')
@@ -116,19 +116,19 @@ class ChatAnalyzerAgent:
         if effective_max_bytes <= 0:
              raise ValueError("max_bytes_per_chunk is too small compared to prompt_overhead_bytes.")
 
-        print(f"   Starting chunking by byte count (Effective Max Bytes per Chunk: {effective_max_bytes})...")
+        print("\n",f"   开始按字节数分块（每块有效最大字节数：{effective_max_bytes}）...")
 
         for message in messages:
             formatted_message = self._format_single_message_for_llm(message)
             try:
                 message_bytes = len(formatted_message.encode(self.byte_encoding))
             except Exception as e:
-                print(f"Warning: Could not encode message, skipping byte count for it. Error: {e}")
+                print("\n",f"警告：无法编码消息，跳过其字节计数。错误：{e}")
                 message_bytes = 0 # 或者给一个估计值
 
             # 检查单条消息是否超限
             if message_bytes > effective_max_bytes:
-                print(f"Warning: Single message exceeds effective max_bytes limit ({message_bytes} > {effective_max_bytes}). Skipping this message: {formatted_message[:100]}...")
+                print("\n",f"警告：单条消息超过有效最大字节限制（{message_bytes} > {effective_max_bytes}）。跳过这条消息：{formatted_message[:100]}...")
                 continue # 跳过这条过长的消息
 
             # 检查加入这条消息后是否会超限
@@ -146,13 +146,13 @@ class ChatAnalyzerAgent:
         if current_chunk:
             chunks.append(current_chunk)
 
-        print(f"   Chunking complete: {len(messages)} messages -> {len(chunks)} chunks (target max_bytes: {self.max_bytes_per_chunk})")
+        print("\n",f"   分块完成：{len(messages)} 条消息 -> {len(chunks)} 个块（目标最大字节数：{self.max_bytes_per_chunk}）")
         return chunks
 
-    # --- Graph Node Methods ---
+    # --- 图节点方法 ---
     def _understand_query_node(self, state: AgentState) -> Dict[str, Any]:
         """节点：理解查询与规划。"""
-        print("--- Running Node: understand_query_node ---")
+        print("\n","--- 运行节点：understand_query_node ---")
         user_query = state['user_query']
         context = state['input_dict'].get('meta', {'context': []}).get('context')
         prompt_template = ChatPromptTemplate.from_messages([
@@ -165,7 +165,7 @@ class ChatAnalyzerAgent:
     输出格式必须是 JSON，包含以下字段:
     - "intent": 对用户意图的简短描述 (例如: "性格分析", "事件总结", "查找特定发言", "常规摘要")。
     - "entities": 一个包含关键实体的字典 (例如: {{"person": "张三"}}, {{"date": "2025-04-08"}}, {{"topic": "项目会议"}})。如果无明显实体，则为空字典。
-    - "chunk_processing_prompt": 生成的用于处理单个文本块的 Prompt 字符串。这个 Prompt 应该指导如何从一小段聊天记录中提取与用户原始问题相关的信息。例如，如果用户问“张三的性格”，这个 Prompt 应该要求提取“张三”在该块中的发言。
+    - "chunk_processing_prompt": 生成的用于处理单个文本块的 Prompt 字符串。这个 Prompt 应该指导如何从一小段聊天记录中提取与用户原始问题相关的信息。例如，如果用户问"张三的性格"，这个 Prompt 应该要求提取"张三"在该块中的发言。
 
     用户问题:
     {user_query}
@@ -179,44 +179,44 @@ class ChatAnalyzerAgent:
         parser = JsonOutputParser()
         chain = prompt_template | self.llm_query_understanding | parser
         try:
-            print(f"   Analyzing user query: '{user_query}'")
+            print("\n",f"   分析用户查询：'{user_query}'")
             response = chain.invoke({"user_query": user_query, "context": context})
-            print(f"   LLM analysis result: {response}")
+            print("\n",f"   LLM分析结果：{response}")
             if not all(k in response for k in ["intent", "entities", "chunk_processing_prompt"]) or not response.get("chunk_processing_prompt"):
-                 raise ValueError("LLM response for query understanding is invalid.")
+                 raise ValueError("LLM对查询理解的响应无效。")
             return {
                 "intent": response.get("intent"),
                 "entities": response.get("entities"),
                 "chunk_processing_prompt": response.get("chunk_processing_prompt")
             }
         except Exception as e:
-            print(f"   Error in understand_query_node: {e}")
-            return {"error_message": f"Failed to understand query or generate processing prompt: {e}"}
+            print("\n",f"   understand_query_node中出错：{e}")
+            return {"error_message": f"无法理解查询或生成处理提示：{e}"}
 
     def _chunk_node(self, state: AgentState) -> Dict[str, Any]:
         """节点：加载消息并按字节数分块。"""
-        print(f"--- Running Node: chunk_node (Max Bytes: {self.max_bytes_per_chunk}) ---")
+        print("\n",f"--- 运行节点：chunk_node（最大字节数：{self.max_bytes_per_chunk}）---")
         if state.get("error_message"): return {}
         try:
             messages = state['input_dict'].get('data', [])
             if not messages:
-                return {"error_message": "No messages found in the input data."}
+                return {"error_message": "输入数据中未找到消息。"}
             message_chunks = self._chunk_by_byte_count(messages)
             if not message_chunks:
-                 return {"error_message": "Chunking resulted in zero chunks. Check data or chunking logic."}
+                 return {"error_message": "分块结果为零块。请检查数据或分块逻辑。"}
             return {"messages": messages, "message_chunks": message_chunks}
         except Exception as e:
-            print(f"   Error in chunk_node: {e}")
-            return {"error_message": f"Failed during message chunking: {e}"}
+            print("\n",f"   chunk_node中出错：{e}")
+            return {"error_message": f"消息分块过程中失败：{e}"}
 
     def _extract_info_node(self, state: AgentState) -> Dict[str, Any]:
         """节点：分块信息提取。"""
-        print("--- Running Node: extract_info_node ---")
+        print("\n","--- 运行节点：extract_info_node ---")
         if state.get("error_message"): return {}
         message_chunks = state.get('message_chunks')
         chunk_processing_prompt = state.get('chunk_processing_prompt')
         if not message_chunks or not chunk_processing_prompt:
-            return {"error_message": "Missing message chunks or processing prompt for extraction."}
+            return {"error_message": "缺少消息块或提取的处理提示。"}
 
         extracted_data = []
         parser = StrOutputParser()
@@ -224,21 +224,21 @@ class ChatAnalyzerAgent:
             f"{chunk_processing_prompt}\n\n聊天记录片段:\n```\n{{chunk_text}}\n```\n\n提取的相关信息 (如果此片段不包含相关信息，请明确说明'无相关信息'):"
         )
         chain = prompt_template | self.llm_extraction | parser
-        print(f"   Processing {len(message_chunks)} chunks using the generated prompt...")
+        print("\n",f"   使用生成的提示处理{len(message_chunks)}个块...")
 
         min_interval = 60.0 / self.rpm_limit if self.rpm_limit > 0 else 0
         last_call_time = time.monotonic()
         for i, chunk in enumerate(message_chunks):
             formatted_chunk = self._format_chunk_for_llm(chunk)
             if not formatted_chunk.strip():
-                print(f"   Skipping empty chunk {i+1}/{len(message_chunks)}")
+                print("\n",f"   跳过空块 {i+1}/{len(message_chunks)}")
                 continue
             try:
                 current_time = time.monotonic()
                 elapsed = current_time - last_call_time
                 if elapsed < min_interval:
                     wait_time = min_interval - elapsed
-                    print(f"   Waiting {wait_time:.2f} seconds to avoid rate limit...")
+                    print("\n",f"   等待{wait_time:.2f}秒以避免速率限制...")
                     time.sleep(wait_time)
 
                 result = chain.invoke({"chunk_text": formatted_chunk})
@@ -246,66 +246,66 @@ class ChatAnalyzerAgent:
                 if "无相关信息" not in result: # 过滤掉明确的否定回答
                     extracted_data.append(result)
             except Exception as e:
-                print(f"   Error processing chunk {i+1}: {e}")
+                print("\n",f"   处理块{i+1}时出错：{e}")
                 last_call_time = time.monotonic()
-                extracted_data.append(f"[Error processing chunk {i+1}: {e}]")
-            print(f"   Processed chunk {i+1}/{len(message_chunks)}")
-        print(f"   Extraction finished. Found relevant info in {len(extracted_data)} chunks.")
+                extracted_data.append(f"[处理块{i+1}时出错：{e}]")
+            print("\n",f"   已处理块 {i+1}/{len(message_chunks)}")
+        print("\n",f"   提取完成。在{len(extracted_data)}个块中找到相关信息。")
         return {"extracted_data": extracted_data}
 
     def _synthesize_answer_node(self, state: AgentState) -> Dict[str, Any]:
         """节点：最终合成答案。"""
-        print("--- Running Node: synthesize_answer_node ---")
+        print("\n","--- 运行节点：synthesize_answer_node ---")
         if state.get("error_message"): return {}
         user_query = state['user_query']
         extracted_data = state.get('extracted_data')
         intent = state.get('intent', '回答用户问题')
         if not extracted_data:
-            print("   No relevant information was extracted.")
+            print("\n","   未提取到相关信息。")
             return {"final_answer": f"根据提供的聊天记录，未能找到与您的问题 '{user_query}' 直接相关的信息。"}
         if not user_query:
-             return {"error_message": "User query is missing for final synthesis."}
+             return {"error_message": "最终合成缺少用户查询。"}
 
         combined_context = "\n\n---\n\n".join(extracted_data)
         prompt_template = ChatPromptTemplate.from_template(
-             f"你是一个乐于助人的AI助手。用户的原始问题是：“{user_query}”。\n"
+             f"你是一个乐于助人的AI助手。用户的原始问题是：\"{user_query}\"。\n"
              f"根据从长聊天记录中提取的相关信息片段，请综合分析并回答用户的原始问题。\n"
              f"用户的意图是：{intent}。\n\n"
              "提取的相关信息片段如下:\n"
              "```\n{combined_context}\n```\n\n"
-             "请根据以上信息，清晰、连贯地回答用户的原始问题：“{user_query}”\n"
+             "请根据以上信息，清晰、连贯地回答用户的原始问题：\"{user_query}\"\n"
              "最终回答:"
         )
         
         parser = StrOutputParser()
         chain = prompt_template | self.llm_synthesis | parser
         try:
-            print("   Synthesizing final answer...")
+            print("\n","\n","   合成最终答案...")
             final_answer = chain.invoke({"combined_context": combined_context, "user_query": user_query})
-            print("   Final answer generated.")
+            print("\n","   已生成最终答案。")
             return {"final_answer": final_answer}
         except Exception as e:
-            print(f"   Error in synthesize_answer_node: {e}")
-            return {"error_message": f"Failed during final answer synthesis: {e}"}
+            print("\n",f"   synthesize_answer_node中出错：{e}")
+            return {"error_message": f"最终答案合成过程中失败：{e}"}
 
     def _handle_error_node(self, state: AgentState) -> Dict[str, Any]:
         """节点：处理错误。"""
-        print("--- Running Node: handle_error_node ---")
-        error = state.get("error_message", "An unknown error occurred.")
-        print(f"   Error caught: {error}")
+        print("\n","--- 运行节点：handle_error_node ---")
+        error = state.get("error_message", "发生未知错误。")
+        print("\n",f"   捕获到错误：{error}")
         return {"final_answer": f"抱歉，处理您的请求时遇到问题：\n{error}"}
 
-    # --- Conditional Edge Logic ---
+    # --- 条件边缘逻辑 ---
     def _should_continue(self, state: AgentState) -> str:
         """决定是继续还是跳转到错误处理。"""
         if state.get("error_message"):
-            print("--- Edge Condition: Error detected, routing to handle_error ---")
+            print("\n","--- 边缘条件：检测到错误，路由到handle_error ---")
             return "error"
         else:
-            # print("--- Edge Condition: No error, continuing normal flow ---") # 减少打印
+            # print("\n","--- 边缘条件：无错误，继续正常流程 ---") # 减少打印
             return "continue"
 
-    # --- Graph Building Method ---
+    # --- 图构建方法 ---
     def _build_graph(self) -> StateGraph:
         """构建 LangGraph 工作流。"""
         workflow = StateGraph(AgentState)
@@ -328,10 +328,10 @@ class ChatAnalyzerAgent:
         workflow.add_edge("handle_error", END)
 
         # 编译图
-        print("Agent graph built successfully.")
+        print("\n","Agent图构建成功。")
         return workflow.compile()
 
-    # --- Public Execution Method ---
+    # --- 公共执行方法 ---
     def run(self, chat_data: Dict[str, Any], user_query: str) -> Dict[str, Any]:
         """
         执行 Agent 来处理聊天数据并回答问题。
@@ -362,10 +362,10 @@ class ChatAnalyzerAgent:
             "error_message": None,
         }
 
-        print("\n--- Starting Agent Execution ---")
+        print("\n","\n--- 开始Agent执行 ---")
         # 使用 invoke 获取最终结果
         final_state = self.app.invoke(initial_state, config={"recursion_limit": self.recursion_limit})
-        print("--- Agent Execution Finished ---")
+        print("\n","--- Agent执行完成 ---")
 
         return final_state
 
@@ -397,7 +397,7 @@ class ChatAnalyzerAgent:
 
 if __name__ == "__main__":
     
-    with open('D:\wangyingjie\WeBot\data\exports\上海交大🇨🇳人生何处不青山__2025-04-02_17-48-13.txt', 'r', encoding='utf-8') as r:
+    with open('D:\wangyingjie\WeBot\data\exports\上海交大🇨🇳人生何处不青山__2025-04-02_17-55-22.txt', 'r', encoding='utf-8') as r:
         chat_data = json.load(r)
     
     user_query = "请你针对这份聊天记录深度分析一下刘奶和李阳之间的关系，并且列出一些数据来支撑的你结论"
@@ -415,13 +415,13 @@ if __name__ == "__main__":
         final_state = agent.run(chat_data, user_query)
 
         # 打印最终答案
-        print("\n--- Final Answer ---")
-        print(final_state.get("final_answer", "No final answer generated."))
+        print("\n","\n--- 最终答案 ---")
+        print("\n",final_state.get("final_answer", "未生成最终答案。"))
         if final_state.get("error_message"):
-             print(f"\n--- Error Message Recorded ---")
-             print(final_state.get("error_message"))
+             print("\n",f"\n--- 记录的错误信息 ---")
+             print("\n",final_state.get("error_message"))
 
     except ValueError as ve:
-         print(f"Input Error: {ve}")
+         print("\n",f"输入错误：{ve}")
     except Exception as e:
-         print(f"An unexpected error occurred during agent execution: {e}")
+         print("\n",f"Agent执行过程中发生意外错误：{e}")
