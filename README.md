@@ -1,14 +1,150 @@
-# WeBot  
+# WeBot 微宝机器人
 
-WeBot是一个基于[WXHOOK](https://github.com/miloira/wxhook)库二次开发，并植入AI功能的微信机器人项目。
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/) [![WXHOOK](https://img.shields.io/badge/Based%20on-WXHOOK-blueviolet)](https://github.com/miloira/wxhook) [![WechatMsg/留痕](https://img.shields.io/badge/Based%20on-WechatMsg/留痕-blueviolet)](https://github.com/LC044/WeChatMsg) [![WXHelper](https://img.shields.io/badge/Based%20on-WXHelper-blueviolet)](https://github.com/ttttupup/wxhelper)
 
-## 功能  
-1. 通过AI总结聊天记录
-2. 通过AI发送消息
-3. 通过AI查找联系人  
-... ...
+**基于大语言模型 (LLM)，让你轻松构建个性化的智能聊天管理微信机器人！**
 
-## 快速开始  
-1. 微信版本依赖  
-    > 项目依赖于[微信3.9.5.81](https://github.com/tom-snow/wechat-windows-versions/releases/download/v3.9.5.81/WeChatSetup-3.9.5.81.exe)版本，若安装了其他版本的微信需要先卸载。  
-    **注意：卸载微信时务必勾选保存聊天记录与配置**   
+本项目是一个基于 [WXHOOK](https://github.com/miloira/wxhook) 和大型语言模型 (LLM) 构建的微信机器人，支持以下功能：
+- 与 AI 的智能聊天 (支持上下文、工具调用)。
+- 分析和总结聊天记录。例如：
+    * 帮我总结一下我和迪丽热巴最近一周的聊天记录
+    * 迪丽热巴上周五为什么生气？帮我从聊天记录中分析一下。
+- 发送消息(仅文字)，例如：
+    * 帮我跟迪丽热巴说一下，今晚我不会去吃饭了。
+    * 帮我总结一下我和吴彦祖昨天的行程规划，然后把总结好的行程发给小王并且提醒他记得订机票。
+
+## ✨ 功能特性
+
+*   **启动和管理微信机器人**: 通过 API 控制 WXHOOK 实例的启动和状态检查，支持微信多开。
+*   **AI 智能对话**:
+    *   集成 Langgraph ReAct Agent，能够理解用户意图、调用工具并进行多轮对话。
+    *   支持多种 LLM (例如 GLM-4-Flash, DeepSeek，Gemini)，可在前端手动切换。
+    *   流式响应 (Server-Sent Events)，实时显示 AI 思考过程、工具调用和最终结果。
+*   **微信信息交互**:
+    *   读取联系人信息 (支持精确/模糊搜索)。
+    *   读取指定联系人/群聊的聊天记录。
+    *   导出聊天记录为多种格式文件 (JSON, TXT, YAML, DOCX)。
+*   **聊天记录处理**:
+    *   调用 LLM 对导出的聊天记录进行内容总结和分析。
+*   **Web 服务**:
+    *   基于 Flask 提供 HTTP API 接口，方便前端或其他服务集成。
+    *   提供美观的 Web 界面。
+*   **数据持久化**:
+    *   存储和管理 AI 对话历史 (`ConversationsDatabase`)。
+    *   管理 LLM 配置信息 (`LLMConfigDatabase`)。
+
+## 🛠️ 技术栈
+
+*   **微信交互**: WXHOOK
+*   **AI Agent**: Langchain, Langgraph
+*   **Web 框架**: Flask, Flask-CORS
+*   **数据库**: SQLite (默认，用于存储对话和配置)
+*   **LLM**: 支持 ZhipuAI (GLM), DeepSeek，Gemini 等，具体可以在前端页面配置
+*   **核心语言**: Python
+
+## 🚀 环境要求
+
+*   **Python**: 3.10+ (推荐)
+*   **微信客户端**: 需要安装[微信3.9.5.81](https://github.com/tom-snow/wechat-windows-versions/releases/download/v3.9.5.81/WeChatSetup-3.9.5.81.exe)版本。
+*   **依赖库**: 查看 `setup.py` 文件。
+*   **LLM API Key**: 需要配置所使用的大语言模型的 API Key，可在前端配置，API Key仅会保存在本地数据库 `LLMConfigDatabase` 中。
+
+## ⚙️ 安装与启动
+
+1.  **克隆仓库**:
+    ```bash
+    git clone https://github.com/WongJingGitt/WeBotPY.git
+    cd WeBotPY
+    ```
+
+2.  **安装依赖**:
+    ```bash
+    # (建议在虚拟环境中执行)
+    pip install .
+    ```
+
+3.  **配置**:
+    *   确保已安装并登录了兼容版本的微信 PC 客户端。
+
+4.  **运行后端服务**:
+    ```bash
+    python main.py --port 16001
+    ```
+    *   服务将在 `http://127.0.0.1:16001` (或指定端口) 启动。
+
+5.  **启动微信机器人实例**:
+    *   向后端服务发送 POST 请求: `http://127.0.0.1:16001/api/bot/start`
+    *   微信机器人启动时默认会伪装当前本地微信版本至最新的微信版本，越过启动时微信版本校验。
+    *   你也可以在请求体 (Body) 可以指定伪装的微信版本:
+        ```json
+        {
+            "version": "3.9.5.81"
+        }
+        ```
+        *但是不建议这样操作，维持默认即可。*
+    *   成功后会返回 WXHOOK 监听的端口号。WXHOOK 会尝试注入微信进程。
+
+6.  **开始交互**:
+    *   可以通过访问 `http://127.0.0.1:16001/` 或直接调用 API 与 AI Agent 进行交互。
+
+7. **配置模型与API Key**:
+    *   可以在前端页面中增加第三方模型、配置API Key。
+    *   在添加模型之前，请确保模型务必支持`Function Call`
+
+## 🧩 API 说明
+
+(基于 `services/service_main.py` 和相关蓝图)
+
+*   `GET /`: (可选) 提供静态 Web 界面。
+*   `POST /api/bot/start`: 启动一个新的微信机器人实例 (WXHOOK)。
+*   `GET /api/bot/list`: 获取当前运行的机器人实例列表及其信息。
+*   `POST /api/bot/login_heartbeat`: 检查指定端口的机器人是否已登录微信。
+*   `POST /api/bot/export_message_file`: 导出指定联系人/群聊的聊天记录。
+*   `POST /api/ai/stream`: 与 AI Agent 进行流式对话。
+*   `/api/conversations/...`: (由 `ServiceConversations` 蓝图提供) 用于管理对话历史的 API。
+*   `/api/llm/...`: (由 `ServiceLLM` 蓝图提供) 用于管理 LLM 配置的 API。
+
+## 🏗️ 核心模块
+
+*   **`main.py`**: 程序入口，启动 Flask Web 服务。
+*   **`agent/`**: 包含 AI Agent 的定义 (`agent.py`) 和相关类型 (`agent_types.py`)。负责处理用户请求，调用 LLM 和工具。
+*   **`bot/`**: 包含与 WXHOOK 和微信数据交互的逻辑。
+    *   `webot.py`: 封装了 WXHOOK 的常用操作，如获取联系人、消息、导出记录等。
+    *   `write_doc.py`/`write_txt.py`: 辅助导出聊天记录到不同文件格式。
+    *   `contact_captor.py`: 辅助进行联系人搜索。
+*   **`llm/`**: LLM 相关封装，提供统一的接口调用不同的语言模型。
+*   **`services/`**: Flask 服务层。
+    *   `service_main.py`: 主服务逻辑，定义核心 API 路由。
+    *   `service_conversations.py`: 处理对话历史相关的 API。
+    *   `service_llm.py`: 处理 LLM 配置相关的 API。
+*   **`databases/`**: 数据库模型和操作，用于持久化存储。
+*   **`tool_call/`**: 定义了 AI Agent 可以使用的工具函数 (例如 `get_contact`, `export_message` 等)。
+*   **`utils/`**: 通用工具函数和辅助模块。
+*   **`static/`**: (可选) 存放前端静态文件。
+
+## ⚠️ 注意事项
+
+*   **微信版本依赖**: 本项目强依赖于 WXHOOK 所支持的特定微信 PC 版本。请确保使用的微信版本与 WXHOOK 兼容。
+*   **稳定性**: WXHOOK 通过逆向工程实现，微信版本更新可能导致其失效。
+*   **LLM 成本**: 使用 LLM API 会产生费用，请注意控制使用量。
+*   **错误处理**: 代码中包含一定的错误处理，但实际使用中可能遇到未覆盖的异常情况。
+
+## 🛡️ 数据安全与隐私
+
+**请仔细阅读以下说明：**
+
+*   **API Key 安全**: 您的 LLM API Key **仅会**存储在您运行本服务**本地计算机**的 SQLite 数据库 (`llm_configs.db`) 中。本项目**绝不会**将您的 API Key 上传到任何远程服务器或进行收集。数据库文件本身也存储在本地。
+*   **聊天记录处理**:
+    *   **本地存储**: 本项目本身**不会**持久化存储您的完整微信聊天记录内容。对话历史数据库 (`conversations.db`) 主要存储 AI 对话的上下文信息（如消息 ID、会话 ID），而非原始的、完整的微信聊天记录。当您执行**导出**操作时，聊天记录会被读取并保存为您指定的本地文件。
+    *   **LLM 分析**: 当您使用需要调用 LLM 进行**内容总结或分析**的功能时 (例如，对获取的聊天记录进行分析)，相应的文本数据**会被发送**给您所配置的第三方 LLM 服务提供商 (如 ZhipuAI, DeepSeek 等)。**这是您主动触发的操作，数据仅在处理该请求时传输**。请务必了解并信任您所使用的 LLM 服务商的隐私政策和数据处理方式。
+    *   **导出文件**: 使用“导出聊天记录”功能创建的文件 (JSON, TXT, DOCX 等) **只会保存在您的本地计算机上**，项目本身**不会**自动上传或分享这些文件到任何地方。
+*   **本地运行**: 整个后端服务、WXHOOK 均在您的本地环境运行，直接与本地微信客户端交互。除了上述调用 LLM API 的特定情况外，数据处理主要在您的本地设备上完成。
+
+**总之：您的 API Key 和微信聊天记录主要保留在您的本地控制之下。只有在您明确使用需要调用大模型的分析功能时，相关文本才会发送给对应的 LLM 服务商。导出文件完全本地保存。**
+
+请确保您的运行环境安全，并妥善保管您的 API Key。
+
+
+## License
+
+本项目遵循 [MIT](LICENSE) 协议。详情请查看 [LICENSE](LICENSE) 文件。
