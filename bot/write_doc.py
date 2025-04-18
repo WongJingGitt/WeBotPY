@@ -12,6 +12,7 @@ from utils.compress_content_praser import parse_compressed_content
 from utils.toolkit import xml_to_dict
 from utils.room_data_pb2 import ChatRoomData
 from databases.global_config_database import MemoryDatabase
+from databases.image_recognition_database import ImageRecognitionDatabase
 
 from requests import post
 from docx import Document
@@ -20,7 +21,7 @@ import xmltodict
 
 CONTACT_LIST = {}
 
-def get_all_message(db_handle: list, wxid, include_image, start_time=None, end_time=None, port=19001):
+def get_all_message(db_handle: list, wxid, include_image=True, start_time=None, end_time=None, port=19001, include_message_type: list=None):
     """
     获取指定联系人的所有消息。
     :param db_handle: MicroMsg.db数据库句柄
@@ -31,7 +32,7 @@ def get_all_message(db_handle: list, wxid, include_image, start_time=None, end_t
     :param port: 端口号
     :return: 消息列表。
     """
-    include_message_type = [
+    include_message_type = include_message_type or [
         MessageType.TEXT_MESSAGE,
         MessageType.VOICE_MESSAGE,
         MessageType.VIDEO_MESSAGE,
@@ -234,7 +235,7 @@ def get_memory(from_user, to_user):
     
 
 
-def decode_img(message: TextMessageFromDB, save_dir, port=19001) -> str:
+def decode_img(message: TextMessageFromDB, save_dir, port=19001, user_data_path: str = None) -> str:
     """
     解码图片
     :param message: 消息对象
@@ -245,7 +246,7 @@ def decode_img(message: TextMessageFromDB, save_dir, port=19001) -> str:
     if message.Type != '3':
         return ""
 
-    user_data_path = post(f'http://127.0.0.1:{port}/api/userInfo').json().get('data').get('dataSavePath')
+    user_data_path = user_data_path or post(f'http://127.0.0.1:{port}/api/userInfo').json().get('data').get('dataSavePath')
 
     message_id = message.MsgSvrID
 
@@ -513,7 +514,7 @@ def write_doc(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, doc_fil
 def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filename=None,
               port=19001, file_type='json', endswith_txt=True, start_time=None, end_time=None, include_image=False):
     
-    user_info = post(f'http://127.0.0.1:{port}/api/userInfo').json().get('data')
+    user_info: dict = post(f'http://127.0.0.1:{port}/api/userInfo').json().get('data')
     main_remark, main_username, _ = get_talker_name(micro_msg_db_handle, wxid, port=port)
     is_room = '@chatroom' in wxid
     memories = get_memory(from_user=user_info.get('wxid'), to_user=wxid)
@@ -554,12 +555,15 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
     }
 
     if is_room: result['meta']['field']['mentioned'] = "消息中提及到的用户，如果为空则代表这条消息没有提及任何人。格式为：[{'name': '被提及人名称', 'wxid': '被提及人wxid'}]"
+    
+    image_rec_db = ImageRecognitionDatabase()
+
     def callback(_nick_name, _remark, _format_time, _message_content, _mention_list, _room,
                  _original_message: TextMessageFromDB, sender_id=None):
         
         # 根据消息类型，获取对应的内容。表情包和图片描述解析违禁风险过大，暂时不做。
         content_types = {
-            MessageType.IMAGE_MESSAGE: "[图片]",    # 可以通过GML 4V Flash描述图片，然后单独开一个本地db，把描述和msg_id关联。考虑到成本问题，暂时不做。 
+            MessageType.IMAGE_MESSAGE: "[图片]\n图片描述: 无具体描述",    # 可以通过GML 4V Flash描述图片，然后单独开一个本地db，把描述和msg_id关联。考虑到成本问题，暂时不做。 
             MessageType.VIDEO_MESSAGE: "[视频]",
             MessageType.TEXT_MESSAGE: _message_content,
             MessageType.VOICE_MESSAGE: "[语音]",
@@ -594,6 +598,11 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
 
         elif _original_message.Type == MessageType.LOCATION_MESSAGE:
             content_types[MessageType.LOCATION_MESSAGE] = parse_location(_message_content)
+
+        elif _original_message.Type == MessageType.IMAGE_MESSAGE:
+            recognition_result = image_rec_db.get_recognition_result(_original_message.MsgSvrID)
+            if recognition_result is not None:
+                content_types[MessageType.IMAGE_MESSAGE] = f"[图片]\n图片描述: {recognition_result}"
 
         item = {
             "sender": _nick_name,
