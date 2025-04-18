@@ -30,7 +30,7 @@ def get_micro_msg_handle(port: int):
     return micro_msg_database.get('handle')
 
 
-def get_msg_handle(port: int):
+def get_msg_handle(port: int) -> List:
     return [item.get('handle') for item in get_db_info(port) if re.match(r'^MSG\d+\.db$', item.get('databaseName'))]
 
 
