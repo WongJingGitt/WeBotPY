@@ -17,6 +17,7 @@ from services.service_llm import ServiceLLM
 from databases.conversation_database import ConversationsDatabase
 from databases.global_config_database import LLMConfigDatabase
 from agent.agent import WeBotAgent
+from bot.image_recognition import ImageRecognition
 
 from flask import Flask, request, has_request_context, send_file, stream_with_context, Response as FlaskResponse
 from flask_cors import CORS
@@ -160,7 +161,6 @@ class ServiceMain(Flask):
             return response.json
    
     def _ai_stream(self):
-        # TODO: DeepSeek自身bug会无限调用工具函数，考虑优化逻辑，优先使用免费模型调用工具函数获取聊天记据，DeepSeek仅负责总结相关操作
         body = request.json
         port = body.get('port')
         message = body.get('message', '')
@@ -232,6 +232,44 @@ class ServiceMain(Flask):
                     wechat_message_config=dumps({"type": "error", "message": "后端出错"}),
                 )
                 yield f"""data: {dumps([{'role': 'assistant', 'content': format_err, 'wechat_message_config': '{"type": "error", "message": "后端出错"}'}])}\n\n"""
+            finally:
+                yield "data: [DONE]\n\n"
+
+        return FlaskResponse(
+            stream_with_context(event_stream()),
+            mimetype="text/event-stream",
+            headers={'X-Accel-Buffering': 'no'}  # 禁用Nginx缓冲
+        )
+
+    def _image_recognition(self ):
+        body = Request(body=request.json, body_keys=['model_id', 'wxid', 'start_time', "end_time", "port"])
+        response = Response(code=200, message='success', data=None)
+        if not body.check_body:
+            response.code = 400
+            response.message = '参数缺失'
+            return response.json
+        
+        image_recognition = ImageRecognition(
+            model_id=body.body.get('model_id'),
+            port=body.body.get('port'),
+        )
+        
+        def event_stream():
+            yield "data: [START]\n\n"
+            try:
+                runner = image_recognition.run(
+                    wxid=body.body.get('wxid'),
+                    start_time=body.body.get('start_time'),
+                    end_time=body.body.get('end_time'),
+                    duration=body.body.get('duration', 1),
+                    only_failed=body.body.get('only_failed', False),
+                )
+
+                for event in runner:
+                    yield f'data: {event}\n\n'
+
+            except Exception as e:
+                yield f'data: {e}\n\n'
             finally:
                 yield "data: [DONE]\n\n"
 
@@ -360,6 +398,7 @@ class ServiceMain(Flask):
             message_id=message_id
         )
 
+    
 
     @property
     def _route_map(self) -> List[Dict[str, Union[Callable, str]]]:
@@ -371,7 +410,8 @@ class ServiceMain(Flask):
              "view_func": self._login_heartbeat},
             {"rule": "/api/bot/export_message_file", "endpoint": "export_message_file", "methods": ['POST'],
              "view_func": self._export_message_file},
-            {"rule": "/api/ai/stream", "endpoint": "ai_stream", "methods": ['POST'], "view_func": self._ai_stream}
+            {"rule": "/api/ai/stream", "endpoint": "ai_stream", "methods": ['POST'], "view_func": self._ai_stream},
+            {"rule": "/api/bot/image_recognition", "endpoint": "image_recognition", "methods": ['POST'], "view_func": self._image_recognition},
         ]
 
     def run(self, port: int = 16001, *args, **kwargs):
