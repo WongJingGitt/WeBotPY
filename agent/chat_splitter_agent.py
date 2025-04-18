@@ -30,7 +30,7 @@ class AgentState(TypedDict):
     error_message: Optional[str]    # 记录处理过程中的错误
 
 # --- 2. 定义Agent类 ---
-class ChatAnalyzerAgent:
+class ChatSplitterAgent:
     """
     一个使用 LangGraph 构建的 Agent，用于分析长聊天记录并回答特定问题。
     它使用字节数来控制文本分块，以适应基于字节数计费/限制的模型。
@@ -403,7 +403,7 @@ if __name__ == "__main__":
     user_query = "请你针对这份聊天记录深度分析一下刘奶和李阳之间的关系，并且列出一些数据来支撑的你结论"
 
     try:
-        agent = ChatAnalyzerAgent(
+        agent = ChatSplitterAgent(
             max_bytes_per_chunk=20480,
             prompt_overhead_bytes=2048,
             llm_query_understanding=LLMFactory.deepseek_v3_llm(),
