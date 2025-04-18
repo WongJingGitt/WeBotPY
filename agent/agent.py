@@ -16,7 +16,7 @@ class WeBotAgent:
     def __init__(self, model_name: str = "glm-4-flash", llm_options: dict = {}, webot_port: int = 19001):
         self.llm = LLMFactory.llm(model_name=model_name, **llm_options)
 
-        self.checkpoint = MemorySaver()
+        self.checkpoint = BASE_CHECKPOINTER
 
         self.agent = create_react_agent(
             model=self.llm,
@@ -64,8 +64,3 @@ class WeBotAgent:
     def chat(self, message: Dict[str, List[BaseMessage | dict]]):  # -> List[HumanMessage|AIMessage|ToolMessage]:
         return self.agent.stream(message, stream_mode=['updates'], config={"configurable": {"thread_id": 42}})
     
-
-class BaseAgent:
-
-    def __init__(self, model_name: str = "glm-4-flash", llm_options: dict = {}, webot_port: int = 19001):
-        pass
