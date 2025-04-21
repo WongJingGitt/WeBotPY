@@ -53,6 +53,12 @@ class SendTextMessageInput(BaseModel):
     message: str = Field(..., description="要发送的文本消息，例如：\"Hello World!\"。")
 
 
+class SendMentionsMessageInput(BaseModel):
+    port: int | float = Field(..., description="当前微信的Port，格式为int，整数。")
+    chatroom_id: str = Field(..., description="消息接收群聊的id，例如：\"123456789@chatroom\"。")
+    message: str = Field(..., description="@消息中附带的文本内容，例如：\"Hello World!\"。")
+    at_users_wxid = Field(..., description="要@的人的wxid列表，当需要提及所有人时传递`notify@all`。例如：[\"wxid_abcdefg123456\", \"wxid_abcdefg123456\"]、[\"notify@all\"]。")
+
 class GetMemoriesInput(BaseModel):
     wxid: str = Field(..., description="这份记忆主体对象的wxid，如果是关于群聊或者群成员的记忆，这里应该传递群聊的wxid。")
     port: int = Field(..., description="当前微信的Port。")
