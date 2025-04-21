@@ -115,7 +115,7 @@ def send_text_message(port, wxid, message):
         }
     ).json()
 
-def send_mention_message(port, room_wxid, message, at_users_wxid: List[str] = None):
+def send_mention_message(port, room_wxid, message, at_users_wxid: List[str] = []):
     port = int(port)
     if at_users_wxid is None:
         raise ValueError("at_users_wxid 不能为空。")
