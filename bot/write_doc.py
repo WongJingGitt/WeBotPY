@@ -19,6 +19,9 @@ from docx import Document
 from docx.shared import Pt
 import xmltodict
 
+# 全局联系人列表伪缓存。
+# `process_messages`在循环消息列表时，每次循环会调用`get_talker_name`查询联系人的微信名与备注。
+# `get_talker_name`会在首次查询时缓存所有的联系人信息，后续查询直接从缓存中获取。
 CONTACT_LIST = {}
 
 def get_all_message(db_handle: list, wxid, include_image=True, start_time=None, end_time=None, port=19001, include_message_type: list=None):
@@ -344,25 +347,6 @@ def get_talker_name(db_handle: str | int, wxid, port=19001) -> tuple[str, str, s
         contact_list = contacts_dict
 
     result = contact_list.get(wxid, [])
-    # result 数据结构
-    # [
-    #     "UserName",
-    #     "Alias",
-    #     "EncryptUserName",
-    #     "Remark",
-    #     "NickName",
-    #     "LabelIDList",
-    #     "PYInitial",
-    #     "QuanPin",
-    #     "Reserved1",
-    #     "Reserved2",
-    #     "VerifyFlag",
-    #     "Type",
-    #     "ExtraBuf",
-    #     "bigHeadImgUrl",
-    #     "smallHeadImgUrl"
-    # ]
-    
     remark, nick_name = result[1] if len(result) > 1 else "未知用户", result[2] if len(result) > 2 else "未知用户"
     return remark, nick_name, wxid
 
