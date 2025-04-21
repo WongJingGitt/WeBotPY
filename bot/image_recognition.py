@@ -64,19 +64,25 @@ class ImageRecognition:
                 save_dir=path.join(DATA_PATH, 'images'),
                 port=self.port,
             )
-            recognition_result = self._image_recognition_db.get_recognition_result(message_id=image_message.MsgSvrID)
+            _, recognition_result, _ = self._image_recognition_db.get_recognition_result(message_id=image_message.MsgSvrID)
+            result = ""
             try:
                 if not image_path:
                     print(f"第{index + 1} / {len(all_image_messages)}张图片解码失败")
                     if not recognition_result:
                         self._image_recognition_db.add_recognition_result(
                             message_id=image_message.MsgSvrID,
-                            recognition_result="无具体描述"
+                            recognition_result="无具体描述",
+                            message_time=image_message.CreateTime
                         )
                     status = '识别失败, 从微信中下载图片失败。'
+                    yield {"total_message": len(all_image_messages), "current_message_index": index + 1, "status": status, "message_id": image_message.MsgSvrID, "recognition_result": None}
                     continue
                 
-                if only_failed and recognition_result is not None and recognition_result != '无具体描述':
+                if only_failed and (recognition_result not in [None, '无具体描述']):
+                    print(f"第{index + 1} / {len(all_image_messages)}张图片已识别，跳过")
+                    status = '已有识别结果, 跳过'
+                    yield {"total_message": len(all_image_messages), "current_message_index": index + 1, "status": status, "message_id": image_message.MsgSvrID, "recognition_result": recognition_result}
                     continue
 
                 [result], [message_id] = self._image_recognition_agent.invoke({
@@ -86,7 +92,8 @@ class ImageRecognition:
                 if not recognition_result:
                     self._image_recognition_db.add_recognition_result(
                         message_id=message_id,
-                        recognition_result=result
+                        recognition_result=result,
+                        message_time=image_message.CreateTime
                     )
                 else:
                     self._image_recognition_db.update_recognition_result(
@@ -94,7 +101,7 @@ class ImageRecognition:
                         recognition_result=result
                     )
                 print(f"处理成功！")
-                status = "处理成功！"
+                status = "处理成功！" if result != '无具体描述' else '由于模型API自身原因识别失败'
 
                 if on_success is not None and isinstance(on_success, Callable):
                     on_success(
@@ -106,24 +113,30 @@ class ImageRecognition:
             except Exception as e:
                 print(f"第{index + 1}张图片识别失败: {e}")
                 status = "识别失败！"
+                self._image_recognition_db.add_recognition_result(
+                    message_id=image_message.MsgSvrID,
+                    recognition_result="无具体描述",
+                    message_time=image_message.CreateTime
+                )
                 if on_error is not None and isinstance(on_error, Callable):
                     on_error(e)
 
             finally:
 
-                try:
-                    dat_path = image_path.replace(".jpg", ".dat")
-                    if path.exists(dat_path):
-                        remove(dat_path)
-                    if path.exists(image_path):
-                        remove(image_path)
-                except Exception as e:
-                    print(f"删除图片失败: {e}")
+                # 删除图片会有副作用，导致微信中的图片缓存也丢失
+                # try:
+                #     dat_path = image_path.replace(".jpg", ".dat")
+                #     if path.exists(dat_path):
+                #         remove(dat_path)
+                #     if path.exists(image_path):
+                #         remove(image_path)
+                # except Exception as e:
+                #     print(f"删除图片失败: {e}")
                 if on_finally is not None and isinstance(on_finally, Callable):
                     on_finally(
                         total_message=len(all_image_messages),
                         current_message_index=index + 1,
                         status=status,
                     )
-            yield {"total_message": len(all_image_messages), "current_message_index": index + 1, "status": status}
+            yield {"total_message": len(all_image_messages), "current_message_index": index + 1, "status": status, "message_id": image_message.MsgSvrID, "recognition_result": result}
             sleep(duration)

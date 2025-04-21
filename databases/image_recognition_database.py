@@ -12,36 +12,37 @@ class ImageRecognitionDatabase(LocalDatabase):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 message_id TEXT NOT NULL,
                 recognition_result TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                message_time DATETIME DEFAULT NULL
             );
             """, commit=True
         )
 
-    def add_recognition_result(self, message_id, recognition_result):
+    def add_recognition_result(self, message_id, recognition_result, message_time):
         cursor = self.execute_query(
             """
-            INSERT INTO image_recognition (message_id, recognition_result)
-            VALUES (?, ?);
+            INSERT INTO image_recognition (message_id, recognition_result, message_time)
+            VALUES (?, ?, ?);
             """,
-            (message_id, recognition_result), commit=True
+            (message_id, recognition_result, message_time), commit=True
         )
         return cursor.lastrowid
     
     def get_recognition_result(self, message_id):
         cursor = self.execute_query(
             """
-            SELECT recognition_result FROM image_recognition WHERE message_id = ?;
+            SELECT message_id, recognition_result, message_time FROM image_recognition WHERE message_id = ?;
             """,
             (message_id,), commit=True
         )
         result = cursor.fetchone()
-        if not result: return None
-        return result[0]
+        if not result: return None, None, None
+        return result
     
     def get_all_recognition_results(self):
         cursor = self.execute_query(
             """
-            SELECT message_id, recognition_result FROM image_recognition;
+            SELECT message_id, recognition_result, message_time FROM image_recognition;
             """, commit=True
         )
         return cursor.fetchall()

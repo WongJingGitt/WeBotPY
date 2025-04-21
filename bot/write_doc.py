@@ -584,7 +584,7 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
             content_types[MessageType.LOCATION_MESSAGE] = parse_location(_message_content)
 
         elif _original_message.Type == MessageType.IMAGE_MESSAGE:
-            recognition_result = image_rec_db.get_recognition_result(_original_message.MsgSvrID)
+            _, recognition_result, _ = image_rec_db.get_recognition_result(_original_message.MsgSvrID)
             if recognition_result is not None:
                 content_types[MessageType.IMAGE_MESSAGE] = f"[图片]\n图片描述: {recognition_result}"
 
