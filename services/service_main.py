@@ -195,6 +195,7 @@ class ServiceMain(Flask):
             # 初始化响应流
             yield "data: [START]\n\n"
             try:
+
                 agent = WeBotAgent(
                     model_name=model_name,
                     webot_port=port,
@@ -214,7 +215,7 @@ class ServiceMain(Flask):
                 }
                 
                 # 流式处理AI响应
-                for event, message in agent.chat({"messages": all_messages}):
+                for event, message in agent.chat({"messages": all_messages}, thread_id=conversation_id):
                     print('='*10, message, '='*10)
                     chunk = self._process_message_chunk(message, conversation_id, user_message_id=user_message_id, original_assistant_message=original_assistant_message)
                     if chunk:

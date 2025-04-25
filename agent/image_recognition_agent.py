@@ -11,7 +11,6 @@ from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel
 
 from llm.llm import LLMFactory
-from agent.agent import BASE_CHECKPOINTER
 
 class ParseResult(BaseModel):
     output: List[str]
@@ -54,7 +53,7 @@ class ImageRecognitionAgent:
 3.  **简洁性与长度控制**:
     *   描述应尽可能简洁，抓住核心。
     *   目标是将描述长度控制在 **10-25个字** 或 **一句话核心描述** 之内。
-4.  **添加标签**: 在描述后添加 1-2 个最相关的标签来概括图片类型或氛围（例如包括不限于： `#自拍`, `#搞笑`, `#性感暗示`, `#商品`, `#游戏截图`, `#文件`, `#日常`）。
+4.  **添加标签**: 你必须在描述后添加2个最相关的标签来概括图片类型或氛围（例如包括不限于： `#自拍`, `#搞笑`, `#性感暗示`, `#商品`, `#游戏截图`, `#文件`, `#日常`）。
 5.  **服务目标**: 牢记这些描述是为后续的AI模型分析聊天上下文、特别是**生成娱乐性总结**服务的，因此信息的准确性、简洁性以及**捕捉关键“梗”点或敏感点的能力**至关重要。
 6.  **输出要求**: 你必须输出一个字典，用`output`键设置一个列表，列表按照输入的顺序，输出每个图片识别结果的描述文本。例如：
     用户输入：
@@ -65,8 +64,8 @@ class ImageRecognitionAgent:
         ```json
         {
             "output": [
-                "一个红苹果",
-                "一根黄香蕉"
+                "截图: 黄金投资，昨日收益10000元，总投资1000000元 #投资 #黄金",
+                "一个小男孩拿着根黄香蕉 #水果 #日常"
             ]
         }
         ```
