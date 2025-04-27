@@ -1,4 +1,4 @@
-data/
+webot/data
 .idea/
 /.env
 build/
