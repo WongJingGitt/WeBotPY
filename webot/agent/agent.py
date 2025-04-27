@@ -25,7 +25,6 @@ class WeBotAgent:
             model=self.llm,
             tools=ALL_TOOLS,
             checkpointer=self.checkpoint,
-            # TODO: Prompt有问题，还需要优化，现在AI会中断函数调用，直接返回文字计划
             prompt=SystemMessage(
                 content=f"""
 # 角色：AI微信机器人助手
