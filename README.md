@@ -54,7 +54,7 @@ WeBot 是一个结合 [WXHOOK](https://github.com/miloira/wxhook) 和大型语�
 ## 🚀 环境要求
 
 *   **Python**: 3.10+ (推荐)
-*   **微信客户端**: 需要安装[微信3.9.5.81](https://github.com/tom-snow/wechat-windows-versions/releases/download/v3.9.5.81/WeChatSetup-3.9.5.81.exe)版本。
+*   **微信客户端**:  **必需要安装[微信3.9.5.81](https://github.com/tom-snow/wechat-windows-versions/releases/download/v3.9.5.81/WeChatSetup-3.9.5.81.exe)版本。**
 *   **依赖库**: 查看 `setup.py` 文件。
 *   **LLM API Key**: 需要配置所使用的大语言模型的 API Key，可在前端配置，API Key仅会保存在本地数据库 `LLMConfigDatabase` 中。
 
@@ -73,28 +73,30 @@ WeBot 是一个结合 [WXHOOK](https://github.com/miloira/wxhook) 和大型语�
     ```
 
 3.  **配置**:
-    *   确保已安装并登录了兼容版本的微信 PC 客户端。
+    *   确保已安装兼容版本的微信 PC 客户端。
 
 4.  **运行后端服务**:
     ```bash
-    python main.py --port 16001
+    # 默认使用16001端口启动WEB服务
+    webot
     ```
-    *   服务将在 `http://127.0.0.1:16001` (或指定端口) 启动。
+    *   服务将在 `http://127.0.0.1:16001` 启动。
+    ---
+    ```bash
+    # 或者可以使用 -P 指定启动的端口号
+    webot -P 17001
+    ```
+    *  服务将在 `http://127.0.0.1:17001` 启动。
 
-5.  **启动微信机器人实例**:
-    *   向后端服务发送 POST 请求: `http://127.0.0.1:16001/api/bot/start`
-    *   微信机器人启动时默认会伪装当前本地微信版本至最新的微信版本，越过启动时微信版本校验。
-    *   你也可以在请求体 (Body) 可以指定伪装的微信版本:
-        ```json
-        {
-            "version": "3.9.5.81"
-        }
-        ```
-        *但是不建议这样操作，维持默认即可。*
-    *   成功后会返回 WXHOOK 监听的端口号。WXHOOK 会尝试注入微信进程。
-
-6.  **开始交互**:
+5.  **开始交互**:
     *   可以通过访问 `http://127.0.0.1:16001/` 或直接调用 API 与 AI Agent 进行交互。
+
+6. **启动微信**:
+    1. 打开网页 `http://127.0.0.1:16001/`
+    2. 点击右上角`登陆新账号`按钮启动微信
+    
+        > 勿直接在桌面点击微信图标启动，会提示版本过低无法启动。
+        若是微信自动更新了新版本，导致登录不成功，需要重新安装3.9.5.81版本    
 
 7. **配置模型与API Key**:
     *   可以在前端页面中增加第三方模型、配置API Key。
@@ -102,16 +104,7 @@ WeBot 是一个结合 [WXHOOK](https://github.com/miloira/wxhook) 和大型语�
 
 ## 🧩 API 说明
 
-(基于 `services/service_main.py` 和相关蓝图)
-
-*   `GET /`: (可选) 提供静态 Web 界面。
-*   `POST /api/bot/start`: 启动一个新的微信机器人实例 (WXHOOK)。
-*   `GET /api/bot/list`: 获取当前运行的机器人实例列表及其信息。
-*   `POST /api/bot/login_heartbeat`: 检查指定端口的机器人是否已登录微信。
-*   `POST /api/bot/export_message_file`: 导出指定联系人/群聊的聊天记录。
-*   `POST /api/ai/stream`: 与 AI Agent 进行流式对话。
-*   `/api/conversations/...`: (由 `ServiceConversations` 蓝图提供) 用于管理对话历史的 API。
-*   `/api/llm/...`: (由 `ServiceLLM` 蓝图提供) 用于管理 LLM 配置的 API。
+具体查看Services模块源代码
 
 ## 🏗️ 核心模块
 
@@ -129,7 +122,7 @@ WeBot 是一个结合 [WXHOOK](https://github.com/miloira/wxhook) 和大型语�
 *   **`databases/`**: 数据库模型和操作，用于持久化存储。
 *   **`tool_call/`**: 定义了 AI Agent 可以使用的工具函数 (例如 `get_contact`, `export_message` 等)。
 *   **`utils/`**: 通用工具函数和辅助模块。
-*   **`static/`**: (可选) 存放前端静态文件。
+*   **`static/`**: 前端静态文件。
 
 ## ⚠️ 注意事项
 
