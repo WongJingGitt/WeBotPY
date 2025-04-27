@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="Webot",
+    name="webot",
     version="0.1.0",
-    packages=find_packages(),
+    packages=find_packages(where='webot'),
     include_package_data=True,
     install_requires=[
         "flask",
@@ -22,6 +22,15 @@ setup(
         "pydantic",
         "langchain_core",
         "xmltodict",
-        "lz4"
-    ]
+        "lz4",
+        "dill",
+        "tomlkit",
+        "pluggy",
+        "protobuf==3.20.2"
+    ],
+    entry_points={
+        "console_scripts": [
+            "webot=webot.main:command_runner"
+        ]
+    }
 )
