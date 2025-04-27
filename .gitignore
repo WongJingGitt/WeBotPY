@@ -4,6 +4,5 @@ webot/data
 build/
 __pycache__/
 *.egg-info/
-Webot/
 dist/
 start.bat
