@@ -1,3 +1,5 @@
+import threading
+import time
 from datetime import datetime
 from json import dumps
 from threading import Thread, Event
@@ -6,6 +8,7 @@ from typing import List, Dict, Callable, Union
 from dataclasses import asdict
 from uuid import uuid4
 import traceback
+import webbrowser
 
 from webot.utils.project_path import ROOT_PATH
 from webot.services.service_type import Response, Request
@@ -159,7 +162,7 @@ class ServiceMain(Flask):
             response.code = 500
             response.message = str(e)
             return response.json
-   
+
     def _ai_stream(self):
         body = request.json
         port = body.get('port')
@@ -170,7 +173,7 @@ class ServiceMain(Flask):
             return Response(code=400, message='模型不存在', data=None).json
 
         model_id, model_format_name, model_name, base_url, apikey, description, apikey_id = model_result
-        
+
         if not apikey:
             return Response(code=400, message='apikey不存在', data=None).json
 
@@ -190,7 +193,10 @@ class ServiceMain(Flask):
         )
 
         all_messages = self._conversions_database.get_messages(conversation_id)
-        all_messages = [{ "role": "user" if _message.get('role') == 'user' else 'assistant', "content": _message.get('content')  } for _message in all_messages if _message.get('content')]
+        all_messages = [
+            {"role": "user" if _message.get('role') == 'user' else 'assistant', "content": _message.get('content')} for
+            _message in all_messages if _message.get('content')]
+
         def event_stream():
             # 初始化响应流
             yield "data: [START]\n\n"
@@ -213,11 +219,12 @@ class ServiceMain(Flask):
                     },
                     "conversation_id": conversation_id
                 }
-                
+
                 # 流式处理AI响应
                 for event, message in agent.chat({"messages": all_messages}, thread_id=conversation_id):
-                    print('='*10, message, '='*10)
-                    chunk = self._process_message_chunk(message, conversation_id, user_message_id=user_message_id, original_assistant_message=original_assistant_message)
+                    print('=' * 10, message, '=' * 10)
+                    chunk = self._process_message_chunk(message, conversation_id, user_message_id=user_message_id,
+                                                        original_assistant_message=original_assistant_message)
                     if chunk:
                         yield f"data: {chunk}\n\n"
             except GeneratorExit as ge:
@@ -242,19 +249,19 @@ class ServiceMain(Flask):
             headers={'X-Accel-Buffering': 'no'}  # 禁用Nginx缓冲
         )
 
-    def _image_recognition(self ):
+    def _image_recognition(self):
         body = Request(body=request.json, body_keys=['model_id', 'wxid', 'start_time', "end_time", "port"])
         response = Response(code=200, message='success', data=None)
         if not body.check_body:
             response.code = 400
             response.message = '参数缺失'
             return response.json
-        
+
         image_recognition = ImageRecognition(
             model_id=body.body.get('model_id'),
             port=body.body.get('port'),
         )
-        
+
         def event_stream():
             yield "data: [START]\n\n"
             try:
@@ -399,8 +406,6 @@ class ServiceMain(Flask):
             message_id=message_id
         )
 
-    
-
     @property
     def _route_map(self) -> List[Dict[str, Union[Callable, str]]]:
         return [
@@ -412,14 +417,23 @@ class ServiceMain(Flask):
             {"rule": "/api/bot/export_message_file", "endpoint": "export_message_file", "methods": ['POST'],
              "view_func": self._export_message_file},
             {"rule": "/api/ai/stream", "endpoint": "ai_stream", "methods": ['POST'], "view_func": self._ai_stream},
-            {"rule": "/api/bot/image_recognition", "endpoint": "image_recognition", "methods": ['POST'], "view_func": self._image_recognition},
+            {"rule": "/api/bot/image_recognition", "endpoint": "image_recognition", "methods": ['POST'],
+             "view_func": self._image_recognition},
         ]
+
+    @staticmethod
+    def open_browser(wait_time=3, url="http://127.0.0.1:16001"):
+        time.sleep(wait_time)
+        webbrowser.open(url)
 
     def run(self, port: int = 16001, *args, **kwargs):
         for route in self._route_map:
             self.add_url_rule(**route)
         self.register_blueprint(ServiceConversations())
         self.register_blueprint(ServiceLLM())
+
+        threading.Thread(target=self.open_browser, args=(0.5, f"http://127.0.0.1:{port}")).start()
+
         super().run(port=port, *args, **kwargs)
 
 
