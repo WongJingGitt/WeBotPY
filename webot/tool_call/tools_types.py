@@ -19,7 +19,8 @@ class GetContentInput(BaseModel):
 
 
 class ContentResult(BaseModel):
-    wxid: str = Field(..., description="联系人的wxid，例如：\"wxid_abcdefg123456\"。")
+    wxid: str = Field(..., description="联系人的内部wxid，仅作用于微信内部识别。例如：\"wxid_abcdefg123456\"。")
+    alias_id: str = Field(..., description="联系人对外展示的微信号，由联系人自定义。")
     remark: str = Field(..., description="用户对这个联系人的备注名，例如：\"我的好友\"。")
     name: str = Field(..., description="这个联系人的微信名，例如：\"小明\"。")
     avatar: str = Field(...,
