@@ -10,7 +10,7 @@ from uuid import uuid4
 import traceback
 import webbrowser
 
-from webot.utils.project_path import ROOT_PATH
+from webot.utils.project_path import ROOT_PATH, DATA_PATH, path
 from webot.services.service_type import Response, Request
 from webot.utils.toolkit import get_latest_wechat_version
 from webot.bot.bot import WeBot
@@ -22,7 +22,7 @@ from webot.databases.global_config_database import LLMConfigDatabase
 from webot.agent.agent import WeBotAgent
 from webot.bot.image_recognition import ImageRecognition
 
-from flask import Flask, request, has_request_context, send_file, stream_with_context, Response as FlaskResponse
+from flask import Flask, request, has_request_context, send_file, stream_with_context, Response as FlaskResponse, send_from_directory
 from flask_cors import CORS
 from requests import post as http_post
 
@@ -206,6 +206,7 @@ class ServiceMain(Flask):
                     model_name=model_name,
                     webot_port=port,
                     llm_options={"apikey": apikey, "base_url": base_url},
+                    username=_bot.info.get('name')
                 )
 
                 original_assistant_message = {
@@ -286,6 +287,26 @@ class ServiceMain(Flask):
             mimetype="text/event-stream",
             headers={'X-Accel-Buffering': 'no'}  # 禁用Nginx缓冲
         )
+
+    def _download_export_file(self, filename):
+
+        if '..' in filename or filename.startswith('/'):
+            return Response(code=400, message='Invalid filename', data=None).json
+        export_dir = path.join(DATA_PATH, 'exports')
+        file_path = path.join(export_dir, filename)
+
+        if not path.exists(file_path):
+            return Response(code=400, message='文件不存在', data=None).json
+
+        try:
+            return send_from_directory(
+                directory=export_dir,
+                path=filename,
+                as_attachment=True,
+                mimetype='application/octet-stream'
+            )
+        except Exception as e:
+            return Response(code=400, message=str(e), data=None).json
 
     def _create_conversation(self, body, _bot):
         """创建新对话记录"""
@@ -419,6 +440,8 @@ class ServiceMain(Flask):
             {"rule": "/api/ai/stream", "endpoint": "ai_stream", "methods": ['POST'], "view_func": self._ai_stream},
             {"rule": "/api/bot/image_recognition", "endpoint": "image_recognition", "methods": ['POST'],
              "view_func": self._image_recognition},
+            {"rule": "/api/bot/download_export_file/<filename>", "endpoint": "download_export_file", "methods": ['GET'],
+             "view_func": self._download_export_file}
         ]
 
     @staticmethod

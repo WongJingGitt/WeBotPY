@@ -1,13 +1,16 @@
 import re
 from datetime import datetime
 from typing import List, Dict, Any
+from os import path
 
 from langchain_core.tools import StructuredTool
 from requests import post
 
 from webot.bot.write_doc import write_txt, get_memory
-from webot.tool_call.tools_types import CurrentTimeResult, GetContentInput, ContentResult, UserInfoResult, GetUserInfoInput, \
-    GetMessageByWxidAndTimeInput, SendTextMessageInput, GetMemoriesInput, GetMemoriesResult, AddMemoryInput, SendMentionsMessageInput
+from webot.tool_call.tools_types import CurrentTimeResult, GetContentInput, ContentResult, UserInfoResult, \
+    GetUserInfoInput, \
+    GetMessageByWxidAndTimeInput, SendTextMessageInput, GetMemoriesInput, GetMemoriesResult, AddMemoryInput, \
+    SendMentionsMessageInput
 from webot.databases.global_config_database import MemoryDatabase
 
 
@@ -23,6 +26,7 @@ def get_micro_msg_handle(port: int):
 def get_msg_handle(port: int) -> List:
     return [item.get('handle') for item in get_db_info(port) if re.match(r'^MSG\d+\.db$', item.get('databaseName'))]
 
+
 # ========== 分割线 ==========
 # 上部分放依赖函数，下部分放导出的工具函数
 
@@ -34,6 +38,7 @@ def get_current_time() -> CurrentTimeResult:
         "current_weekday": now.strftime("%A"),
         "current_timezone": str(now.astimezone().tzinfo),
     })
+
 
 def get_contact(port, keyword) -> List[ContentResult]:
     """
@@ -63,7 +68,8 @@ def get_contact(port, keyword) -> List[ContentResult]:
             "dbHandle": micro_msg_database_handle
         }
     ).json().get('data')
-    return [ContentResult(wxid=item[0], remark=item[10], name=item[11], avatar=item[-1]) for item in result[1:]]
+    return [ContentResult(wxid=item[0], remark=item[10], name=item[11], avatar=item[-1], alias_id=item[1]) for item in result[1:]]
+
 
 def get_user_info(port) -> UserInfoResult:
     port = int(port)
@@ -79,6 +85,7 @@ def get_user_info(port) -> UserInfoResult:
         wxid=result.get('wxid')
     )
 
+
 def get_message_by_wxid_and_time(wxid, port, start_time, end_time):
     port = int(port)
     return write_txt(
@@ -92,9 +99,10 @@ def get_message_by_wxid_and_time(wxid, port, start_time, end_time):
         file_type=None
     )
 
+
 def export_message(wxid, port, start_time, end_time):
     port = int(port)
-    return write_txt(
+    file_path = write_txt(
         msg_db_handle=get_msg_handle(port),
         micro_msg_db_handle=get_micro_msg_handle(port),
         wxid=wxid,
@@ -104,6 +112,13 @@ def export_message(wxid, port, start_time, end_time):
         endswith_txt=True,
         file_type='json'
     )
+    filename = path.basename(file_path)
+    return {
+        "file_path": file_path,
+        "filename": filename,
+        "download_link": f"/api/bot/download_export_file/{filename}"
+    }
+
 
 def send_text_message(port, wxid, message):
     port = int(port)
@@ -114,6 +129,7 @@ def send_text_message(port, wxid, message):
             "msg": message
         }
     ).json()
+
 
 def send_mention_message(port, room_wxid, message, at_users_wxid: List[str] = []):
     port = int(port)
@@ -135,10 +151,12 @@ def send_mention_message(port, room_wxid, message, at_users_wxid: List[str] = []
         }
     ).json()
 
+
 def get_memories(wxid: str, port: int) -> List[GetMemoriesResult]:
     user_info = get_user_info(port=port)
     from_user = user_info.wxid
     return get_memory(from_user=from_user, to_user=wxid)
+
 
 def add_memory(wxid: str, port: int, content: str, type: str, event_time: str):
     user_info = get_user_info(port=port)
@@ -150,7 +168,6 @@ def add_memory(wxid: str, port: int, content: str, type: str, event_time: str):
         type=type,
         event_time=event_time
     )
-    
 
 
 ALL_TOOLS = [
@@ -186,6 +203,7 @@ ALL_TOOLS = [
     - `remark` (str): 你为该联系人设置的备注名。如果是群聊或没有设置备注，可能为空或为群聊名称。
     - `name` (str): 该联系人的微信昵称或群聊的名称。
     - `avatar` (str): 联系人或群聊的头像图片URL地址。
+    - `alias_id` (str): 联系人对外展示的微信号，由联系人自定义。
 """
     ),
     StructuredTool.from_function(
@@ -361,7 +379,9 @@ send_mention_message(
     - `end_time` (str): 聊天记录的结束时间，必须严格使用 "YYYY-MM-DD HH:MM:SS" 格式。
 
 ### 返回参数说明:
-    - (str): 成功导出后，返回一个本地 **.txt 文件的绝对路径**。该 TXT 文件内部包含的是 **JSON 格式** 的聊天记录数据。如果导出失败，可能返回错误信息或空字符串（具体取决于 `write_txt` 的实现）。
+    - file_path(str): 本地 **.txt 文件的绝对路径**。该 TXT 文件内部包含的是 **JSON 格式** 的聊天记录数据。如果导出失败，可能返回错误信息或空字符串（具体取决于 `write_txt` 的实现）。
+    - filename: 导出的具体文件明
+    - download_link: 下载链接，需要以 `[filename](download_link)` 形式展示出下载入口提供给用户快捷下载。
 """
     ),
     StructuredTool.from_function(
