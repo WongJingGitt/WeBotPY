@@ -394,33 +394,3 @@ class ChatSplitterAgent:
 #   4. 考虑把intermediate_results指向到JSONL中，优化SQLite的性能
 
 
-if __name__ == "__main__":
-    
-    with open('D:\wangyingjie\WeBot\data\exports\上海交大🇨🇳人生何处不青山__2025-04-02_17-55-22.txt', 'r', encoding='utf-8') as r:
-        chat_data = json.load(r)
-    
-    user_query = "请你针对这份聊天记录深度分析一下刘奶和李阳之间的关系，并且列出一些数据来支撑的你结论"
-
-    try:
-        agent = ChatSplitterAgent(
-            max_bytes_per_chunk=20480,
-            prompt_overhead_bytes=2048,
-            llm_query_understanding=LLMFactory.deepseek_v3_llm(),
-            llm_extraction=LLMFactory.gemini_llm(),
-            llm_synthesis=LLMFactory.deepseek_v3_llm()
-        )
-
-        # 运行 Agent
-        final_state = agent.run(chat_data, user_query)
-
-        # 打印最终答案
-        print("\n","\n--- 最终答案 ---")
-        print("\n",final_state.get("final_answer", "未生成最终答案。"))
-        if final_state.get("error_message"):
-             print("\n",f"\n--- 记录的错误信息 ---")
-             print("\n",final_state.get("error_message"))
-
-    except ValueError as ve:
-         print("\n",f"输入错误：{ve}")
-    except Exception as e:
-         print("\n",f"Agent执行过程中发生意外错误：{e}")
