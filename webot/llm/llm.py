@@ -26,7 +26,6 @@ class LLMFactory:
             return ChatGoogleGenerativeAI(
                 api_key=SecretStr(apikey),
                 model=model_name,
-                *args,
                 **kwargs,
             )
 
@@ -52,9 +51,9 @@ class LLMFactory:
 
         return ChatGoogleGenerativeAI(
             api_key=SecretStr(api_key),
-            model=model, max_retries=10
-                                     * args,
-            **kwargs,
+            model=model,
+            max_retries=10,
+            **kwargs
         )
 
     @staticmethod
