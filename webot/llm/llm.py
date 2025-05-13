@@ -44,7 +44,7 @@ class LLMFactory:
         )
 
     @staticmethod
-    def gemini_llm(model="gemini-2.0-flash-exp", *args, **kwargs):
+    def gemini_llm(model="gemini-2.0-flash-exp", **kwargs):
         api_key = getenv("GEMINI_API_KEY")
         if not api_key:
             raise MissingApiKeyError("GEMINI_API_KEY is not set, please set it in .env file")
@@ -105,6 +105,20 @@ class LLMFactory:
         return ChatOpenAI(
             model=model,
             base_url="https://api.deepseek.com",
+            api_key=SecretStr(api_key),
+            *args,
+            **kwargs,
+        )
+
+
+    @staticmethod
+    def volcengine_llm(model="doubao-pro-256k-241115", *args, **kwargs):
+        api_key = getenv("VOLCENGINE_API_KEY")
+        if not api_key:
+            raise MissingApiKeyError("VOLCENGINE_API_KEY is not set, please set it in .env file")
+        return ChatOpenAI(
+            model=model,
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
             api_key=SecretStr(api_key),
             *args,
             **kwargs,
