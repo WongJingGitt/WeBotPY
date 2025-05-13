@@ -7,6 +7,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langgraph.graph import StateGraph, END
+from langgraph.graph.state import CompiledStateGraph
 
 from webot.llm.llm import LLMFactory
 
@@ -42,7 +43,8 @@ class ChatSplitterAgent:
             llm_query_understanding: BaseChatModel,  # 用于理解查询和规划的 LLM 实例。
             llm_extraction: BaseChatModel = None,  # 用于从块中提取信息的 LLM 实例。
             llm_synthesis: BaseChatModel = None,  # 用于合成最终答案的 LLM 实例。
-            max_bytes_per_chunk: int = 12000,  # 基于字节数的块大小上限 (需要根据模型调整)
+            max_bytes_per_chunk: int = 25000,  # 基于字节数的块大小上限 (需要根据模型调整)
+            max_bytes_pre_recursive_fuse_chunk: int = 25000,
             prompt_overhead_bytes: int = 500,  # 估算的 Prompt 开销字节数 (需要调整)
             byte_encoding: str = 'utf-8',  # 用于计算字节数的编码
             recursion_limit: int = 15,
@@ -53,10 +55,11 @@ class ChatSplitterAgent:
 
         Args:
             llm_query_understanding: 用于理解查询和规划的 LLM 实例。建议使用高参数模型，例如：DeepSeek V3
-            llm_extraction: 用于从块中提取信息的 LLM 实例。默认使用 llm_query_understanding。主要的Token消耗环节，建议使用低参数模型，例如：GLM FLash、Gemini Flash
+            llm_extraction: 用于从块中提取信息的 LLM 实例。默认使用 llm_query_understanding。主要的Token消耗环节，可以使用低参数模型，但是不建议，低参数模型丢失细节比较严重。建议使用豆包1.5pro 256k
             llm_synthesis: 用于最终合成答案的 LLM 实例。默认使用 llm_query_understanding。建议使用高参数模型，例如：DeepSeek V3
-            max_bytes_per_chunk: 每个块的最大目标字节数 (不含 Prompt 开销)。
-            prompt_overhead_bytes: 为 Prompt 和其他开销预留的估计字节数。
+            max_bytes_per_chunk: 每个块的最大目标字节数 (不含 Prompt 开销)。单位是bytes
+            max_bytes_pre_recursive_fuse_chunk: 在递归融合之前，每个块的最大目标字节数 (不含 Prompt 开销)。单位是bytes
+            prompt_overhead_bytes: 为 Prompt 和其他开销预留的估计字节数。单位是bytes
             byte_encoding: 计算字节数时使用的字符串编码。
             recursion_limit: LangGraph 的递归深度限制。
             rpm_limit: 模型每分钟处理的最大请求数。
@@ -71,6 +74,7 @@ class ChatSplitterAgent:
 
         # 配置参数
         self.max_bytes_per_chunk = max_bytes_per_chunk
+        self.max_bytes_pre_recursive_fuse_chunk = max_bytes_pre_recursive_fuse_chunk
         self.prompt_overhead_bytes = prompt_overhead_bytes
         self.byte_encoding = byte_encoding
         self.recursion_limit = recursion_limit
@@ -81,32 +85,94 @@ class ChatSplitterAgent:
 
     # --- 辅助方法 ---
     def _format_single_message_for_llm(self, message: Dict) -> str:
-        """将单条消息字典格式化为简洁的字符串表示。"""
+        """
+        将单条消息字典格式化为包含关键ID和简化内容的字符串表示。
+        格式: timestamp - [wxid] sender (remark): simplified_content (msg_id: ..., reply_to: ..., mentions: N)
+        """
         sender = message.get('sender', 'Unknown')
         remark = message.get('remark')
         content = message.get('content', '')
-        timestamp = message.get('time', '')
-        prefix = f"{sender}"
+        timestamp = message.get('time', 'no-timestamp')  # 使用默认值防止 KeyErrors
+        wxid = message.get('wxid', 'no-wxid')
+        msg_id = message.get('msg_id', 'no-msgid')
+        reply_msg_id = message.get('reply_msg_id')  # 可能为 None
+        mentioned = message.get('mentioned', [])  # 默认为空列表
+
+        # --- 格式化发送者信息 (包含 wxid) ---
+        sender_info = f"[{wxid}] {sender}"
         if remark:
-            prefix += f" ({remark})"
+            sender_info += f" ({remark})"
 
-        # 简化特殊消息表示
-        if isinstance(content, str) and content.startswith('[') and ']' in content:
-            try:
-                main_type_end = content.find(':') if ':' in content else content.find(']')
-                if main_type_end != -1:
-                    main_type = content[1:main_type_end]
-                    # 避免过长的类型名称
-                    if len(main_type) > 20: main_type = main_type[:20] + "..."
-                    content = f"[{main_type}消息]"
-                else:
-                    content = "[特殊消息]"
-            except:
-                content = "[特殊消息]"  # Fallback
-        elif not isinstance(content, str):  # 处理非字符串内容
-            content = "[非文本消息]"
+        # --- 简化内容 (保留部分结构信息，避免完全丢失类型) ---
+        simplified_content = ""
+        if isinstance(content, str):
+            simplified_content = content  # 默认使用原始内容
+            if content.startswith('[') and ']' in content:
+                try:
+                    main_type_end = content.find(':') if ':' in content else content.find(']')
+                    if main_type_end != -1:
+                        main_type = content[1:main_type_end].strip()
+                        # 对于某些类型，尝试保留简短标题或子类型
+                        title_or_subtype = ""
+                        if ':' in content[1:main_type_end + 2]:  # 检查是否有冒号分隔
+                            details_start = main_type_end + 1
+                            details_end = content.find(']', details_start)
+                            details_part = content[details_start: details_end if details_end != -1 else None].strip(
+                                " |")
+                            # 提取 '||' 分隔符前的部分作为标题/子类型 (如果存在)
+                            title_or_subtype = details_part.split('||')[0].strip()
+                            # 限制标题/子类型长度
+                            if len(title_or_subtype) > 40:
+                                title_or_subtype = title_or_subtype[:37] + "..."
 
-        return f"{timestamp} - {prefix}: {content}"
+                        if title_or_subtype:
+                            simplified_content = f"[{main_type}: {title_or_subtype}]"
+                        # 对引用消息做特殊简化，避免嵌套过深
+                        elif main_type == "引用消息":
+                            simplified_content = "[引用消息]"  # 可以考虑提取回复内容，但会增加复杂性
+                        elif main_type == "聊天记录":
+                            simplified_content = "[聊天记录片段]"
+                        else:  # 其他类型只保留主类型
+                            simplified_content = f"[{main_type}消息]"
+                    else:
+                        # 如果格式不规范，例如只有 "[视频]"
+                        bracket_content = content[1:content.find(']')]
+                        if bracket_content and len(bracket_content) < 20:
+                            simplified_content = f"[{bracket_content}消息]"
+                        else:
+                            simplified_content = "[特殊格式内容]"
+                except Exception:
+                    simplified_content = "[内容解析错误]"  # 解析出错时的回退
+            # else: content is plain text, keep simplified_content = content
+        elif not isinstance(content, str):
+            simplified_content = "[非文本消息]"
+        else:
+            simplified_content = str(content)  # 确保是字符串
+
+        # --- 构建消息元数据字符串 (msg_id, reply_to, mentions count) ---
+        meta_parts = []
+        meta_parts.append(f"msg_id: {msg_id}")  # 始终包含 msg_id
+
+        if reply_msg_id:
+            meta_parts.append(f"reply_to: {reply_msg_id}")
+
+        mention_count = 0
+        if isinstance(mentioned, list):
+            mention_count = len(mentioned)
+        if mention_count > 0:
+            meta_parts.append(f"mentions: {mention_count}")
+            # 如果你需要知道具体提到了谁的 wxid，可以取消下面的注释，但这会显著增加长度
+            # mentioned_wxids = [m.get('wxid', 'unknown') for m in mentioned if isinstance(m, dict)]
+            # if mentioned_wxids:
+            #     meta_parts.append(f"mentioned_wxids: [{','.join(mentioned_wxids)}]")
+
+        meta_str = ""
+        if meta_parts:
+            meta_str = f" ({', '.join(meta_parts)})"
+
+        # --- 组合最终字符串 ---
+        final_string = f"{timestamp} - {sender_info}: {simplified_content}{meta_str}"
+        return final_string
 
     def _format_chunk_for_llm(self, chunk: List[Dict[str, Any]]) -> str:
         """将消息字典列表（一个块）转换为多行文本表示。"""
@@ -178,16 +244,51 @@ class ChatSplitterAgent:
         """节点：理解查询与规划。"""
         print("\n", "--- 运行节点：understand_query_node ---")
         user_query = state['user_query']
-        # context = state['input_dict'].get('meta', {}).get('context') # 获取 context
-        # 注意：下面的模板没有使用 {context} 变量，如果需要使用 context，需在模板中加入
+        context_info = state['input_dict'].get('meta', {}).get('context', {}).get('memories', [])
+        context_str = "\n".join(
+            [f"- {mem.get('type')}: {mem.get('content')}" for mem in context_info if mem.get('content')])
 
-        # *** 修改后的 Prompt 模板，避免变量识别错误 ***
+        if not context_str.strip():
+            context_str = "当前聊天记录没有可用上下文"
+        else:
+            encoded_context = context_str.encode(self.byte_encoding)
+            if len(encoded_context) > self.max_bytes_pre_recursive_fuse_chunk:
+                print(
+                    f"\n   警告：背景信息字节数过长 ({len(encoded_context)} bytes)，将截断至 {self.max_bytes_pre_recursive_fuse_chunk} bytes。")
+                context_str = encoded_context[:self.max_bytes_pre_recursive_fuse_chunk].decode(self.byte_encoding,
+                                                                                               errors='ignore') + "\n[...背景信息过长已截断...]"
+
         prompt_template = ChatPromptTemplate.from_messages([
-            ("system", """你是一位智能任务规划师。你的任务是分析用户关于聊天记录的问题，并生成一个清晰的指令（Prompt），用于指导后续步骤从聊天记录中提取相关信息。请识别用户的核心意图和关键实体，并根据意图和实体生成一个用于处理每个聊天记录块的 Prompt。输出格式必须是 JSON，包含以下字段:
-- "intent": 对用户意图的简短描述 (例如: "性格分析", "事件总结", "查找特定发言", "常规摘要")。
-- "entities": 一个包含关键实体的字典。示例实体可能包括人物（如 张三）、日期（如 2025-04-08）或主题（如 项目会议）。如果无明显实体则为空字典。
-- "chunk_processing_prompt": 用于处理每个块的提示字符串，指导从聊天记录中提取与用户问题相关的信息。
-请生成 JSON 输出："""),
+            ("system", """
+你是一位专业的聊天记录分析规划师。你的任务是仔细分析用户关于聊天记录的问题，并结合已知的背景信息，生成一个智能且高效的指令（Prompt），用于指导后续步骤从聊天记录的每个块中提取相关信息。
+
+**核心要求:**
+1.  **理解用户问题**: 准确把握用户的核心查询意图。
+2.  **理解背景信息**: 深入理解下方提供的背景信息，识别其中的关键人物（及其昵称、角色、关系）、重要事件、群聊文化等。这些信息是重要的**参考线索**。
+3.  **生成智能提取指令**: 基于用户问题和背景信息，创建一个**侧重于相关性但保持开放性**的 `chunk_processing_prompt`。这个指令应该：
+    *   **优先引导**模型关注与已知背景信息（人物、事件、话题等）和用户问题直接相关的发言和互动。
+    *   **明确指出**需要分析的方面（如角色、发言特点、语言风格、互动模式、特定群聊文化体现等）。
+    *   **同时保持警惕**，能够识别和提取**任何**与用户问题相关的、即使未在背景信息中明确提及的新信息或意外发现（例如，新出现的活跃人物、未预料的讨论主题、与已知背景矛盾的现象等）。**不要将提取范围硬性限制在背景信息已知的内容上。**
+4.  **结构化输出**: 输出必须是 JSON 格式，包含以下字段：
+    *   `"intent"`: 用户意图的简短描述。
+    *   `"entities"`:  一个包含关键实体的字典 (例如: {{"person": "张三"}}, {{"date": "2025-04-08"}}, {{"topic": "项目会议"}}, {{"event": "张三提醒大家参加项目会议"}})。如果无明显实体，则为空字典。
+    *   `"chunk_processing_prompt"`: 用于指导提取的指令字符串。它应体现上述的“优先引导”和“保持开放性”原则。
+    *   `"context_background"`: 用作存放背景信息原文。
+
+**已知背景信息 (请务必利用):**
+
+```text
+{context_background}
+```
+
+**请根据以上所有信息，生成 JSON 输出:**
+```json
+{{
+    "intent": "...",
+    "entities": {{...}},
+    "chunk_processing_prompt": "..."
+}}
+"""),
             ("human", "{user_query}")  # 只期望 user_query 作为输入变量
         ])
         parser = JsonOutputParser()
@@ -195,7 +296,7 @@ class ChatSplitterAgent:
         try:
             print(f"\n   分析用户查询：'{user_query}'")
             # *** 修正 invoke 调用，只传入模板需要的变量 ***
-            response = chain.invoke({"user_query": user_query})
+            response = chain.invoke({"user_query": user_query, "context_background": context_str})
             print(f"\n   LLM分析结果：{response}")
 
             # 增强检查，确保生成的 Prompt 非空
@@ -259,7 +360,19 @@ class ChatSplitterAgent:
         # 使用 f-string 动态构建模板，确保 chunk_processing_prompt 被正确嵌入
         try:
             prompt_template = ChatPromptTemplate.from_template(
-                f"{chunk_processing_prompt}\n\n聊天记录片段:\n```\n{{chunk_text}}\n```\n\n提取的相关信息 (如果此片段不包含相关信息，请明确说明'无相关信息'):"
+                f"""
+{chunk_processing_prompt}
+
+聊天记录片段:
+
+```
+{{chunk_text}}
+```
+
+提取的相关信息 (如果此片段不包含相关信息，请明确说明'无相关信息'):
+
+**若是遇到其他预料外任何无法提取的场景，你应该返回 '由于xxxx原因，该片段无法总结。'，不要返回错误状态码。**
+"""
             )
             chain = prompt_template | self.llm_extraction | parser
         except Exception as e:
@@ -271,10 +384,13 @@ class ChatSplitterAgent:
 
         min_interval = 60.0 / self.rpm_limit if self.rpm_limit > 0 else 0
         last_call_time = time.monotonic()
+        chunk_duration_list = []
 
         for i, chunk in enumerate(message_chunks):
             print(f"\n   处理块 {i + 1}/{len(message_chunks)}...")
+            format_start = time.monotonic()
             formatted_chunk = self._format_chunk_for_llm(chunk)
+            print(f"\n     格式化块 {i + 1} 耗时 {time.monotonic() - format_start:.2f} 秒。")
             if not formatted_chunk.strip():
                 print(f"\n   跳过空块 {i + 1}")
                 continue
@@ -283,11 +399,13 @@ class ChatSplitterAgent:
                 elapsed = current_time - last_call_time
                 if elapsed < min_interval:
                     wait_time = min_interval - elapsed
-                    print(f"\n     等待 {wait_time:.2f} 秒以避免速率限制...")
+                    print(f"     等待 {wait_time:.2f} 秒以避免速率限制...")
                     time.sleep(wait_time)
 
                 # 调用提取链
+                invoke_start_time = time.monotonic()
                 result = chain.invoke({"chunk_text": formatted_chunk})
+                print(f"     块 {i + 1} 信息提取完成，耗时 {time.monotonic() - invoke_start_time:.2f} 秒。")
                 last_call_time = time.monotonic()
 
                 # 更鲁棒地检查是否无相关信息（忽略大小写和空格）
@@ -296,7 +414,13 @@ class ChatSplitterAgent:
                     print(f"     块 {i + 1} 提取到信息。")
                 else:
                     print(f"     块 {i + 1} 无相关信息。")
+                chunk_duration = time.monotonic() - format_start
+                chunk_duration_list.append(chunk_duration)
 
+                duration_all = sum(chunk_duration_list) / len(chunk_duration_list) * len(message_chunks)
+                duration_left = duration_all - sum(chunk_duration_list)
+                print(f"     块 {i + 1} 总耗时：{chunk_duration:.2f} 秒。")
+                print(f"     预计总耗时: {duration_all:.2f} 秒，剩余 {duration_left:.2f} 秒")
             except Exception as e:
                 error_msg = f"处理块 {i + 1} 时出错：{e}"
                 import traceback
@@ -340,14 +464,27 @@ class ChatSplitterAgent:
         if len(combined_context.encode(self.byte_encoding)) > self.max_bytes_per_chunk:
             print(f"\n   提取数据过长 ({len(combined_context.encode(self.byte_encoding))} bytes)，启动递归融合...")
             # 定义融合指令模板
-            fusion_directive_template = "请融合以下从聊天记录片段中提取的信息，专注于与用户原始问题最相关的要点，提炼精华，去除冗余和不相关内容。原始问题是：“{user_query}”。\n\n待融合信息片段：\n```\n{context}\n```\n\n融合后的精简摘要："
+            fusion_directive_template = """
+你是一个专门处理中间信息融合的AI助手。你的任务是将以下多个文本片段（它们是从长聊天记录中提取的，或经过了之前的融合）**合并并浓缩成一个单一、连贯、信息密集的段落**。
+
+**核心目标**：
+1.  **保留关键信息**: 只保留与用户原始问题：“{user_query}” 最直接相关的核心事实、观点和证据。
+2.  **消除冗余**: 删除重复的信息、不重要的细节和填充性语句。
+3.  **单一输出**: 输出**必须**是一个自然语言段落。**严禁**使用任何 Markdown 标题、列表、项目符号或其他结构化格式。
+4.  **忽略错误**: 完全忽略并**丢弃**任何形式如 "[处理块...出错...]" 的错误标记或元数据。
+
+**待融合的信息片段:**
+{context}
+
+**请生成融合后的单一、连贯的段落:**
+"""
             try:
                 # 将 user_query 放入模板，因为它对融合很重要
                 formatted_fusion_template = fusion_directive_template.format(user_query=user_query,
                                                                              context="{context}")  # 预格式化user_query部分
                 combined_context = self._recursive_fuse(
                     valid_extracted_data,  # 只融合有效数据
-                    self.max_bytes_per_chunk,
+                    self.max_bytes_pre_recursive_fuse_chunk,
                     formatted_fusion_template  # 传递包含 user_query 的模板字符串
                 )
                 print(f"\n   递归融合后的最终字节数: {len(combined_context.encode(self.byte_encoding))}")
@@ -368,18 +505,23 @@ class ChatSplitterAgent:
 
         # --- 用于最终答案合成的链 ---
         # 使用 f-string 动态构建最终合成提示
-        synthesis_prompt = f"""你是一位专业的聊天记录分析助手。用户的原始问题是：“{user_query}”。
+        synthesis_prompt = """
+你是一位专业的聊天记录分析师，你的任务是根据下面提供的、从长聊天记录中提取并可能已初步融合的信息片段，撰写一份**统一、连贯、结构清晰**的分析报告，以回答用户的原始问题。
+
+用户的原始问题是：“{user_query}”。
 用户的意图是：“{intent}”。
 
-根据从长聊天记录中提取并融合（如果需要）的相关信息片段，请综合分析并清晰、连贯地回答用户的原始问题。
+**可用信息片段汇总 (请将这些信息视为一个整体进行分析和整合):**
+{combined_context}
+**报告要求:**
+1.  **整合分析**: 不要仅仅罗列片段内容。请**综合**所有相关信息，提炼出关于主要发言人（尤其是用户问题中提到的，如张三、李四等）的角色定位、核心发言特点（语言风格、常用语、讨论倾向等）。
+2.  **结构清晰**: 使用清晰的标题和小标题（例如，“主要发言人分析”、“高光时刻举例”、“总结”等）来组织报告。
+3.  **证据支撑**: 在分析每个发言人的特点时，**引用**上下文信息中的具体发言（“高光时刻”）作为**证据**来支撑你的观点。选择最典型、最有代表性的例子。
+4.  **忽略元信息**: 如果上下文中包含类似 "[处理块...时出错]" 的错误标记，请忽略它们，不要包含在最终报告中。
+5.  **流畅自然**: 报告应语言流畅，逻辑连贯，读起来像一份完整的分析文档。
 
-提取并融合的相关信息如下:
-```
-{{combined_context}}
-```
-
-请严格基于以上提供的信息进行回答，不要编造信息。如果信息不足以完全回答，请指出。
-最终回答:"""  # 模板变量是 combined_context
+**请基于以上信息和要求，生成最终的分析报告:**
+"""  # 模板变量是 combined_context
 
         try:
             synthesis_prompt_template = ChatPromptTemplate.from_template(synthesis_prompt)
@@ -388,7 +530,7 @@ class ChatSplitterAgent:
 
             print("\n   合成最终答案...")
             # 调用合成链，只需要传入 combined_context
-            final_answer = synthesis_chain.invoke({"combined_context": combined_context})
+            final_answer = synthesis_chain.invoke({"combined_context": combined_context, "user_query": user_query, "intent": intent})
 
             # 添加在提取阶段遇到的错误信息（如果存在）
             if error_markers:
@@ -606,7 +748,7 @@ class ChatSplitterAgent:
             return "continue"
 
     # --- 图构建方法 ---
-    def _build_graph(self) -> StateGraph:
+    def _build_graph(self) -> CompiledStateGraph:
         """构建 LangGraph 工作流。"""
         workflow = StateGraph(AgentState)
 
@@ -648,38 +790,28 @@ class ChatSplitterAgent:
         # 错误处理节点是终点
         workflow.add_edge("handle_error", END)
 
-        # 编译图
-        print("\n", "Agent图构建成功。")
-        # 添加检查点（如果需要持久化状态）
-        # from langgraph.checkpoint.sqlite import SqliteSaver
-        # memory = SqliteSaver.from_conn_string(":memory:") # 或使用文件
-        # return workflow.compile(checkpointer=memory)
         return workflow.compile()
 
     # --- 公共执行方法 ---
-    def run(self, chat_data: Dict[str, Any], user_query: str) -> Dict[str, Any]:
+    def run(self, _chat_data: Dict[str, Any], user_query: str) -> Dict[str, Any]:
         """
         执行 Agent 来处理聊天数据并回答问题。
 
         Args:
-            chat_data: 包含 'meta' 和 'data' 的聊天记录字典。'data'应为消息列表。
+            _chat_data: 包含 'meta' 和 'data' 的聊天记录字典。'data'应为消息列表。
             user_query: 用户的问题字符串。
 
         Returns:
             包含最终状态的字典，其中 'final_answer' 是给用户的答案或错误信息。
         """
-        if not isinstance(chat_data, dict) or 'data' not in chat_data:
-            # 可以在这里直接返回错误状态，或者抛出异常
-            # return {"error_message": "Invalid chat_data format. Expected a dict with a 'data' key.", "final_answer": "输入数据格式错误。"}
+        if not isinstance(_chat_data, dict) or 'data' not in _chat_data:
             raise ValueError("Invalid chat_data format. Expected a dict with a 'data' key.")
         if not isinstance(user_query, str) or not user_query.strip():
-            # return {"error_message": "user_query must be a non-empty string.", "final_answer": "用户问题不能为空。"}
             raise ValueError("user_query must be a non-empty string.")
 
         initial_state: AgentState = {
-            "input_dict": chat_data,
+            "input_dict": _chat_data,
             "user_query": user_query,
-            # 初始化其他字段为 None 或空列表/字典
             "intent": None,
             "entities": None,
             "chunk_processing_prompt": None,
@@ -693,9 +825,6 @@ class ChatSplitterAgent:
         print("\n\n--- 开始Agent执行 ---")
         final_state = {}
         try:
-            # 使用 invoke 获取最终结果
-            # 添加可配置的线程ID等信息，用于跟踪和持久化（如果使用了Checkpointer）
-            # config = {"configurable": {"thread_id": "user_123"}, "recursion_limit": self.recursion_limit}
             config = {"recursion_limit": self.recursion_limit}
             final_state = self.app.invoke(initial_state, config=config)
             print("\n--- Agent执行完成 ---")
@@ -718,8 +847,6 @@ class ChatSplitterAgent:
             final_state['error_message'] = None  # 或根据情况设置
 
         return final_state
-
-
 
 # TODO:
 #   1. 增加任务表格绑定拓展断点重试
