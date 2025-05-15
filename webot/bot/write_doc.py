@@ -394,7 +394,7 @@ def process_messages(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, 
         image_path = ""
 
         if message.IsSender == '1':
-            remark, nick_name, sender_id = "用户自己", user_info.get('name'), user_info.get('wxid')
+            remark, nick_name, sender_id = user_info.get('remark'), user_info.get('name'), user_info.get('wxid')
         else:
             sender_id = get_sender_form_room_msg(message.BytesExtra) if message.room else message.StrTalker
             remark, nick_name, _ = get_talker_name(micro_msg_db_handle, sender_id, port)
@@ -507,41 +507,71 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
     result = {
         "meta": {
             "description": f'聊天记录的数据结构定义',
-            "notes": f'这是一份微信{"群聊" if is_room else "私聊"}聊天记录',
-            "field": {
-                "sender": "消息发送人的名称。，其中同名的发送人代表同一个人发送的消息",
-                "remark": "对消息发送人的备注，如果为空则代表该联系人没有备注",
-                "content": """
-消息的具体内容, 主要包含以下形式：
-1. 文本消息：直接展示内容。
-    例如："你好"
-2. 特殊消息：由`[主类型: 子类型||标题]\n额外描述`组成。
-    例如：
-        - "[网页链接: 香港最新真实收入曝光！]\n来源: 景鸿移民"。
-        - "[小程序: 瑞幸咖啡]\n来杯咖啡..."
-        - "[分享音乐: 陶喆 - 爱我还是他]"
-        - "[聊天记录: 群聊的聊天记录]\n张三: 你好\n李四: 你也好"
-        - "[视频链接: 林俊杰《起风了》]\nUP主：大虾试车真香\n播放：50.3万"
-        - "[位置消息: 深圳市南山区xxxxx]"
-        - "[名片消息: 张三]"
-        - "[引用消息：张三 回复 李四]\n原始消息(部分): 「今天天气真好好！」\n回复内容: 是啊！"
-        - "[通知消息：拍一拍]\n张三 拍了拍 李四" || "[通知消息: 撤回]\n张三撤回了一条消息" || "[通知消息: 邀请]\n张三邀请李四进入群聊"
-""",
-                "time": "消息发送时间",
-                "wxid": "消息发送人的wxid，每个用户的唯一id，可以用来判断消息发送人是否是同一位。",
-                "msg_id": "消息的唯一ID",
-                "reply_msg_id": "当这条消息引用(回复)了另一条消息，则存放被引用(回复)的消息的msg_id，否则不展示这个字段。"
+            "notes": f'这是一份微信{"群聊" if is_room else "私聊"}聊天记录，由用户{user_info.get("wxid")}({user_info.get("name")})主动导出。因此聊天中wxid为{user_info.get("wxid")}是用户本人。',
+            "field_definitions": {
+                "sender": {
+                    "description": "消息发送者在发送该消息时所使用的昵称或群内昵称。注意：此名称可能随时间变化，并非唯一标识。",
+                    "data_type": "string"
+                },
+                "remark": {
+                    "description": "导出此记录的用户为消息发送者设置的备注名。如果为空，则表示未设置备注。此备注也可能随时间变化。",
+                    "data_type": "string",
+                    "presence": "optional"
+                },
+                "content": {
+                    "description": "消息的具体内容。根据消息类型，其格式可能不同。",
+                    "data_type": "string",
+                    "detailed_formats": {
+                        "text": "纯文本消息，直接展示内容。示例: \"你好\"",
+                        "special_message_pattern": "特殊消息通常遵循 `[主类型: 子类型||标题]\\n额外描述` 的格式。具体示例如下：",
+                        "examples": [
+                            {"type": "网页链接", "format": "[网页链接: 香港最新真实收入曝光！]\\n来源: 景鸿移民"},
+                            {"type": "小程序", "format": "[小程序: 瑞幸咖啡]\\n来杯咖啡..."},
+                            {"type": "分享音乐", "format": "[分享音乐: 陶喆 - 爱我还是他]"},
+                            {"type": "聊天记录", "format": "[聊天记录: 群聊的聊天记录]\\n张三: 你好\\n李四: 你也好"},
+                            {"type": "视频链接",
+                             "format": "[视频链接: 林俊杰《起风了》]\\nUP主：大虾试车真香\\n播放：50.3万"},
+                            {"type": "位置消息", "format": "[位置消息: 深圳市南山区xxxxx]"},
+                            {"type": "名片消息", "format": "[名片消息: 张三]"},
+                            {"type": "引用消息",
+                             "format": "[引用消息：张三 回复 李四]\\n原始消息(部分): 「今天天气真好好！」\\n回复内容: 是啊！"},
+                            {"type": "通知消息-拍一拍", "format": "[通知消息：拍一拍]\\n张三 拍了拍 李四"},
+                            {"type": "通知消息-撤回", "format": "[通知消息: 撤回]\\n张三撤回了一条消息"},
+                            {"type": "通知消息-邀请", "format": "[通知消息: 邀请]\\n张三邀请李四进入群聊"}
+                        ]
+                    }
+                },
+                "time": {
+                    "description": "消息发送的本地时间，通常为 'YYYY-MM-DD HH:MM:SS' 格式。建议结合时区信息理解（如果外部AI有此能力）。",
+                    "data_type": "string"
+                },
+                "wxid": {
+                    "description": "消息发送者的微信ID (`wxid`)。这是在整个微信生态中唯一且永久标识一个用户的权威ID。使用此ID来准确识别、区分和关联不同的消息发送者，即使他们的昵称 ("
+                                   "`sender`) 或备注 (`remark`) 发生变化。",
+                    "data_type": "string",
+                    "role": "authoritative_identifier"
+                },
+                "msg_id": {
+                    "description": "消息在聊天会话中的唯一ID。",
+                    "data_type": "string"
+                },
+                "reply_msg_id": {
+                    "description": "如果此消息是对另一条消息的回复，此字段将包含被回复消息的 `msg_id`。如果不是回复消息，则此字段不存在或为空。",
+                    "data_type": "string",
+                    "presence": "optional"
+                }
             },
             "context": {
-                "description": "AI生成辅助上下文（根据历史消息动态推断得出），仅用于理解对话隐含信息，禁止直接输出到最终结论中。",
-                "memories": memories
+                "description": "AI生成辅助上下文（根据历史消息动态推断得出），仅用于理解对话隐含信息，禁止直接输出到最终结论中。\n"
+                               "在`data`与`meta.context.memories`中，所有提及的联系人应该通过其 `wxid` (格式如 `wxid_example`) 进行权威标识。任何同时出现的自然语言名称(如`data.sender`\`data.remark`\`meta.context.memories`中的人名)仅为参考或历史快照，可能已过时。",
+                "memories": memories,
             }
         },
         "data": []
     }
 
-    if is_room: result['meta']['field'][
-        'mentioned'] = "消息中提及到的用户，如果为空则代表这条消息没有提及任何人。格式为：[{'name': '被提及人名称', 'wxid': '被提及人wxid'}]"
+    if is_room: result['meta']['field_definitions'][
+        'mentioned'] = "消息中提及到的用户，如果为空则代表这条消息没有提及任何人。格式为：[{'name': '被提及人名称(仅作为快照，在推断时不应该过度依赖。)', 'wxid': '被提及人wxid'}]"
 
     image_rec_db = ImageRecognitionDatabase()
 
