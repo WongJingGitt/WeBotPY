@@ -81,3 +81,7 @@ class AddMemoryInput(BaseModel):
     type: MemoryEventType = Field(..., description="记忆的类型。在以下选项中选择一项：'event', 'topic', 'social_network', 'nickname', 'keyword', 'summary'")
     content: str = Field(..., description="记忆的内容。")
     event_time: str | None = Field(default=None, description="记忆的事件发生时间，通常只有event才会记录。")
+
+
+class DeleteMemoryInput(BaseModel):
+    memory_id: int = Field(..., description="要删除的记忆的memory_id。")

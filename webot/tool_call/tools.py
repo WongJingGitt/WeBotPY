@@ -10,7 +10,7 @@ from webot.bot.write_doc import write_txt, get_memory
 from webot.tool_call.tools_types import CurrentTimeResult, GetContentInput, ContentResult, UserInfoResult, \
     GetUserInfoInput, \
     GetMessageByWxidAndTimeInput, SendTextMessageInput, GetMemoriesInput, GetMemoriesResult, AddMemoryInput, \
-    SendMentionsMessageInput
+    SendMentionsMessageInput, DeleteMemoryInput
 from webot.databases.global_config_database import MemoryDatabase
 
 
@@ -168,6 +168,11 @@ def add_memory(wxid: str, port: int, content: str, type: str, event_time: str):
         type=type,
         event_time=event_time
     )
+
+
+def delete_memory(memory_id: int) -> bool:
+    md = MemoryDatabase()
+    return md.delete_memory(memory_id=memory_id)
 
 
 ALL_TOOLS = [
@@ -429,4 +434,27 @@ send_mention_message(
     - (int): 成功添加记忆后，返回该条记忆在数据库中的唯一行ID (last row id)。这是一个整数。如果添加失败，行为可能取决于数据库操作，可能抛出异常或返回一个非正整数值（需要根据实际测试确定失败情况下的返回值）。
 """
     ),
+    StructuredTool.from_function(
+        name="delete_memory",
+        func=delete_memory,
+        args_schema=DeleteMemoryInput,
+        description="""
+用作删除一条记忆，接收一个`memory_id`作为参数，运行后会删除该`memory_id`的记忆。
+
+## 使用须知：
+- 由于用户无法直接感知到`memory_id`，通常会用自然语言描述删除的记忆。需要先通过`get_memories`函数获取所有记忆，推断出需要删除的是哪一条。
+- 函数会返回一个布尔值，`True`代表删除成功，`False`代表删除失败。
+
+## 示例：
+- 用户输入：帮我删除关于迪丽热巴不喜欢我的记忆。
+- 你的操作流程：
+    1. 调用`get_contact`函数，传递关键字`迪丽热巴`，查询出`迪丽热巴`的wxid。
+    2. 调用`get_memories`，传递`迪丽热巴`的wxid，获取所有关于`迪丽热巴`的记忆。
+    3. 根据所有关于`迪丽热巴`的记忆，推断出符合用户描述的记忆。
+        * 匹配到多条结果，例如：`迪丽热巴`分别在5月2日和3月18日说了两次不喜欢我。主动询问用户需要删除哪一条。
+        * 匹配到单条结果，例如：`迪丽热巴`仅在4月6日说了不喜欢我。将匹配到的记忆发送给用户，二次确认是否删除。
+    4. 根据用户的答复，调用`delete_memory`(本函数)删除用户确认的记忆。
+    5. 根据`delete_memory`的返回值，告知用户是否删除成功。
+        """
+    )
 ]
