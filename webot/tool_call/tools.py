@@ -171,6 +171,9 @@ def add_memory(wxid: str, port: int, content: str, type: str, event_time: str):
 
 
 def delete_memory(memory_id: int) -> bool:
+    if not memory_id and memory_id != 0:
+        raise ValueError("memory_id 不能为空。")
+
     md = MemoryDatabase()
     return md.delete_memory(memory_id=memory_id)
 

@@ -24,7 +24,9 @@ import xmltodict
 # `get_talker_name`会在首次查询时缓存所有的联系人信息，后续查询直接从缓存中获取。
 CONTACT_LIST = {}
 
-def get_all_message(db_handle: list, wxid, include_image=True, start_time=None, end_time=None, port=19001, include_message_type: list=None):
+
+def get_all_message(db_handle: list, wxid, include_image=True, start_time=None, end_time=None, port=19001,
+                    include_message_type: list = None):
     """
     获取指定联系人的所有消息。
     :param db_handle: MicroMsg.db数据库句柄
@@ -109,17 +111,14 @@ def xml_message_parse(compressed_content: str):
         result['type'] = 'music_share'
         result['content'] = f'[分享音乐: {app_msg.get("des") or "未知歌手"} - {app_msg.get("title")}]'
 
-
     def mini_program(app_msg: dict):
         result['type'] = 'mini_program'
         result['content'] = f'[小程序: {app_msg.get("sourcedisplayname", "未知小程序")}]\n{app_msg.get("title")}'
-
 
     def chat_history(app_msg: dict):
         result['type'] = 'chat_history'
         result['content'] = f'[聊天记录：{app_msg.get("title")}]\n{app_msg.get("des")}'
 
-    
     def video_message(app_msg: dict):
         result['type'] = 'video_message'
         result['content'] = f'[视频链接: {app_msg.get("title")}]\n{app_msg.get("des")}'
@@ -148,8 +147,8 @@ def xml_message_parse(compressed_content: str):
             "19": chat_history,
             "4": video_message,
             "5": web_view
-        } 
-        
+        }
+
         content_dict.get(original_msg_type, default_message)(app_msg)
 
     except Exception as e:
@@ -164,8 +163,10 @@ def notice_message_parse(content: str):
         content = f'[通知消息: 加入群聊]\n{content}'
     elif '拍了拍' in content:
         content = f'[通知消息: 拍一拍]\n{content}'
-    else: content = f'[通知消息: 未知类型]\n{content}'
+    else:
+        content = f'[通知消息: 未知类型]\n{content}'
     return content
+
 
 def check_mention_list(bytes_extra: str):
     """
@@ -196,6 +197,7 @@ def check_mention_list(bytes_extra: str):
     mention_list = at_user_list.split(',')
     return mention_list
 
+
 def parse_location(content: str):
     try:
         parse_result = xml_to_dict(content)
@@ -203,7 +205,8 @@ def parse_location(content: str):
         return f"[位置消息: {location.get('@label')}{location.get('@poiname')}]"
     except Exception as e:
         return '[位置消息]'
-    
+
+
 def card_message_parse(content: str):
     try:
         parse_result = xml_to_dict(content)
@@ -212,6 +215,7 @@ def card_message_parse(content: str):
     except Exception as e:
         print(e)
         return '[名片消息]'
+
 
 def get_sender_form_room_msg(bytes_extra: str) -> str:
     """
@@ -234,8 +238,7 @@ def get_memory(from_user, to_user):
         from_user=from_user,
         to_user=to_user
     )
-    return [ { "type": item[1], "content": item[2], "event_time": item[3], "wxid": to_user } for item in memories]
-    
+    return [{"memory_id": item[0], "type": item[1], "content": item[2], "event_time": item[3], "wxid": to_user} for item in memories]
 
 
 def decode_img(message: TextMessageFromDB, save_dir, port=19001, user_data_path: str = None) -> str:
@@ -249,7 +252,8 @@ def decode_img(message: TextMessageFromDB, save_dir, port=19001, user_data_path:
     if message.Type != '3':
         return ""
 
-    user_data_path = user_data_path or post(f'http://127.0.0.1:{port}/api/userInfo').json().get('data').get('dataSavePath')
+    user_data_path = user_data_path or post(f'http://127.0.0.1:{port}/api/userInfo').json().get('data').get(
+        'dataSavePath')
 
     message_id = message.MsgSvrID
 
@@ -335,7 +339,7 @@ def get_talker_name(db_handle: str | int, wxid, port=19001) -> tuple[str, str, s
 
         if resp.get('code') != 1:
             return '', '', ""
-                    
+
         contacts = resp.get('data')
         contacts_dict = {}
         for index, item in enumerate(contacts):
@@ -383,7 +387,7 @@ def process_messages(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, 
     room_members = {}
     if is_room:
         room_members = get_room_members(db_handle=micro_msg_db_handle, room_id=wxid, port=port)
-    
+
     for index, item in enumerate(data):
         message = TextMessageFromDB(*item)
         # 获取发送人名称
@@ -494,10 +498,8 @@ def write_doc(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, doc_fil
     return file_name
 
 
-
 def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filename=None,
               port=19001, file_type='json', endswith_txt=True, start_time=None, end_time=None, include_image=False):
-    
     user_info: dict = post(f'http://127.0.0.1:{port}/api/userInfo').json().get('data')
     main_remark, main_username, _ = get_talker_name(micro_msg_db_handle, wxid, port=port)
     is_room = '@chatroom' in wxid
@@ -538,21 +540,24 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
         "data": []
     }
 
-    if is_room: result['meta']['field']['mentioned'] = "消息中提及到的用户，如果为空则代表这条消息没有提及任何人。格式为：[{'name': '被提及人名称', 'wxid': '被提及人wxid'}]"
-    
+    if is_room: result['meta']['field'][
+        'mentioned'] = "消息中提及到的用户，如果为空则代表这条消息没有提及任何人。格式为：[{'name': '被提及人名称', 'wxid': '被提及人wxid'}]"
+
     image_rec_db = ImageRecognitionDatabase()
 
     def callback(_nick_name, _remark, _format_time, _message_content, _mention_list, _room,
                  _original_message: TextMessageFromDB, sender_id=None):
-        
+
         # 根据消息类型，获取对应的内容。表情包和图片描述解析违禁风险过大，暂时不做。
         content_types = {
-            MessageType.IMAGE_MESSAGE: "[图片]\n图片描述: 无具体描述",    # 可以通过GML 4V Flash描述图片，然后单独开一个本地db，把描述和msg_id关联。考虑到成本问题，暂时不做。 
+            MessageType.IMAGE_MESSAGE: "[图片]\n图片描述: 无具体描述",
+            # 可以通过GML 4V Flash描述图片，然后单独开一个本地db，把描述和msg_id关联。考虑到成本问题，暂时不做。
             MessageType.VIDEO_MESSAGE: "[视频]",
             MessageType.TEXT_MESSAGE: _message_content,
             MessageType.VOICE_MESSAGE: "[语音]",
             MessageType.LOCATION_MESSAGE: "[位置消息]",
-            MessageType.EMOJI_MESSAGE: "[动画表情]",    # 同样可以通过content字段的cndurl下载表情图片，GML 4V Flash描述图片用本地db存起来用标签的md5作为id，同样考虑成本问题暂时不做。
+            MessageType.EMOJI_MESSAGE: "[动画表情]",
+            # 同样可以通过content字段的cndurl下载表情图片，GML 4V Flash描述图片用本地db存起来用标签的md5作为id，同样考虑成本问题暂时不做。
             MessageType.XML_MESSAGE: "[未解析的XML消息]",
             MessageType.NOTICE_MESSAGE: "[通知消息]",
         }
@@ -566,10 +571,12 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
             if reply_msg_id:
                 for history in result['data'][::-1]:
                     if history['msg_id'] == reply_msg_id:
-                        original_content = history.get("content") if len(history.get("content")) < 10 else f'{history.get("content")[0:5]} ...'
-                        content_types[MessageType.XML_MESSAGE] = f"[引用消息：{_nick_name} 回复 {history.get('sender')}]\n原始消息(部分): 「{original_content}」\n回复内容(完整): {content_types[MessageType.XML_MESSAGE]}"
+                        original_content = history.get("content") if len(
+                            history.get("content")) < 10 else f'{history.get("content")[0:5]} ...'
+                        content_types[
+                            MessageType.XML_MESSAGE] = f"[引用消息：{_nick_name} 回复 {history.get('sender')}]\n原始消息(部分): 「{original_content}」\n回复内容(完整): {content_types[MessageType.XML_MESSAGE]}"
                         break
-        
+
         elif _original_message.Type == MessageType.NOTICE_MESSAGE:
             content_types[MessageType.NOTICE_MESSAGE] = notice_message_parse(_original_message.content)
             # 通知消息会有一部分消息获取不到wxid和名称，用微信团队兜底
@@ -596,12 +603,11 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
             "wxid": sender_id,
             "msg_id": _original_message.MsgSvrID,
         }
-        
+
         if _room and _mention_list: item['mentioned'] = _mention_list
         if reply_msg_id: item['reply_msg_id'] = reply_msg_id
 
         result['data'].append(item)
-
 
     process_messages(
         msg_db_handle=msg_db_handle,
@@ -633,5 +639,3 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
             fa.write('\n')
             fa.write(yaml.dump({"data": result.get('data')}, allow_unicode=True))
         return file_path
-    
-
