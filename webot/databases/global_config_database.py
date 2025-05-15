@@ -343,7 +343,17 @@ SELECT memory_id, type, content, event_time, created_at FROM memory WHERE from_u
         result = self.execute_query(sql, params)
         return result.fetchall()
 
-    def delete_memory(self, memory_id: int) -> None:
+    def get_memory_by_id(self, memory_id: int) -> dict | None:
+        sql = """
+SELECT memory_id, from_user, to_user, type, content, event_time, created_at FROM memory WHERE memory_id = ?
+"""
+        result = self.execute_query(sql, (memory_id,))
+        result = result.fetchone()
+        if not result:
+            return None
+        return dict(zip(("memory_id", "from_user", "to_user", "type", "content", "event_time", "created_at"), result))
+
+    def delete_memory(self, memory_id: int) -> bool:
         """
         删除一条记忆记录。
         :param memory_id: 记忆ID。
@@ -352,6 +362,10 @@ SELECT memory_id, type, content, event_time, created_at FROM memory WHERE from_u
 DELETE FROM memory WHERE memory_id = ?
 """
         self.execute_query(sql, (memory_id,), commit=True)
+        # 判断是否删除成功
+        if self.get_memory_by_id(memory_id):
+            return False
+        return True
 
     def update_memory(self, memory_id: int, content: str) -> None:
         """
@@ -365,3 +379,4 @@ UPDATE memory SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE memory_id = 
         self.execute_query(sql, (content, memory_id), commit=True)
 
         return
+
