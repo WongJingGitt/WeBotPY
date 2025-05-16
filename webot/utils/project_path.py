@@ -10,6 +10,3 @@ if not path.exists(DATA_PATH):
     mkdir(path.join(DATA_PATH, 'databases'))
     mkdir(path.join(DATA_PATH, 'images'))
     mkdir(path.join(DATA_PATH, 'exports'))
-
-if __name__ == '__main__':
-    print(DATA_PATH)
