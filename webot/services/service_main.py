@@ -163,6 +163,12 @@ class ServiceMain(Flask):
             response.message = str(e)
             return response.json
 
+    # TODO: 需要增加聊天上下文 (优先级: 低)
+    #   - 目前聊天超出LLM API上下文会直接返回API错误信息，但是目前可通过前端开启新对话规避，所以优先级不高。
+    #   - 需要增加上下文摘要功能，达到阈值自动总结最前面的内容，缩短聊天。
+    #   - 摘要上下文和前端展示上下文隔离问题需要考虑，展示需要全量
+    #   - 需要考虑不同模型的上下文不同，并且用户自定义模型无法感知到上下文大小。
+    #   - 获取微信聊天记录场景也要考虑，获取一份长聊天之后插入在上下文超长了，但实际LLM上下文可能就三四条。单条消息极端长的场景
     def _ai_stream(self):
         body = request.json
         port = body.get('port')
