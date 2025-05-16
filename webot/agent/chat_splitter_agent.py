@@ -10,6 +10,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.graph.state import CompiledStateGraph
 
 from webot.llm.llm import LLMFactory
+from webot.prompts.system_prompts import SystemPrompts
 
 
 # --- 1. 定义状态（类外部） ---
@@ -259,36 +260,7 @@ class ChatSplitterAgent:
                                                                                                errors='ignore') + "\n[...背景信息过长已截断...]"
 
         prompt_template = ChatPromptTemplate.from_messages([
-            ("system", """
-你是一位专业的聊天记录分析规划师。你的任务是仔细分析用户关于聊天记录的问题，并结合已知的背景信息，生成一个智能且高效的指令（Prompt），用于指导后续步骤从聊天记录的每个块中提取相关信息。
-
-**核心要求:**
-1.  **理解用户问题**: 准确把握用户的核心查询意图。
-2.  **理解背景信息**: 深入理解下方提供的背景信息，识别其中的关键人物（及其昵称、角色、关系）、重要事件、群聊文化等。这些信息是重要的**参考线索**。
-3.  **生成智能提取指令**: 基于用户问题和背景信息，创建一个**侧重于相关性但保持开放性**的 `chunk_processing_prompt`。这个指令应该：
-    *   **优先引导**模型关注与已知背景信息（人物、事件、话题等）和用户问题直接相关的发言和互动。
-    *   **明确指出**需要分析的方面（如角色、发言特点、语言风格、互动模式、特定群聊文化体现等）。
-    *   **同时保持警惕**，能够识别和提取**任何**与用户问题相关的、即使未在背景信息中明确提及的新信息或意外发现（例如，新出现的活跃人物、未预料的讨论主题、与已知背景矛盾的现象等）。**不要将提取范围硬性限制在背景信息已知的内容上。**
-4.  **结构化输出**: 输出必须是 JSON 格式，包含以下字段：
-    *   `"intent"`: 用户意图的简短描述。
-    *   `"entities"`:  一个包含关键实体的字典 (例如: {{"person": "张三"}}, {{"date": "2025-04-08"}}, {{"topic": "项目会议"}}, {{"event": "张三提醒大家参加项目会议"}})。如果无明显实体，则为空字典。
-    *   `"chunk_processing_prompt"`: 用于指导提取的指令字符串。它应体现上述的“优先引导”和“保持开放性”原则。
-    *   `"context_background"`: 用作存放背景信息原文。
-
-**已知背景信息 (请务必利用):**
-
-```text
-{context_background}
-```
-
-**请根据以上所有信息，生成 JSON 输出:**
-```json
-{{
-    "intent": "...",
-    "entities": {{...}},
-    "chunk_processing_prompt": "..."
-}}
-"""),
+            ("system", SystemPrompts.chat_splitter_understand_prompt()),
             ("human", "{user_query}")  # 只期望 user_query 作为输入变量
         ])
         parser = JsonOutputParser()
@@ -464,20 +436,7 @@ class ChatSplitterAgent:
         if len(combined_context.encode(self.byte_encoding)) > self.max_bytes_per_chunk:
             print(f"\n   提取数据过长 ({len(combined_context.encode(self.byte_encoding))} bytes)，启动递归融合...")
             # 定义融合指令模板
-            fusion_directive_template = """
-你是一个专门处理中间信息融合的AI助手。你的任务是将以下多个文本片段（它们是从长聊天记录中提取的，或经过了之前的融合）**合并并浓缩成一个单一、连贯、信息密集的段落**。
-
-**核心目标**：
-1.  **保留关键信息**: 只保留与用户原始问题：“{user_query}” 最直接相关的核心事实、观点和证据。
-2.  **消除冗余**: 删除重复的信息、不重要的细节和填充性语句。
-3.  **单一输出**: 输出**必须**是一个自然语言段落。**严禁**使用任何 Markdown 标题、列表、项目符号或其他结构化格式。
-4.  **忽略错误**: 完全忽略并**丢弃**任何形式如 "[处理块...出错...]" 的错误标记或元数据。
-
-**待融合的信息片段:**
-{context}
-
-**请生成融合后的单一、连贯的段落:**
-"""
+            fusion_directive_template = SystemPrompts.chat_splitter_fusion_directive_template()
             try:
                 # 将 user_query 放入模板，因为它对融合很重要
                 formatted_fusion_template = fusion_directive_template.format(user_query=user_query,
@@ -505,23 +464,7 @@ class ChatSplitterAgent:
 
         # --- 用于最终答案合成的链 ---
         # 使用 f-string 动态构建最终合成提示
-        synthesis_prompt = """
-你是一位专业的聊天记录分析师，你的任务是根据下面提供的、从长聊天记录中提取并可能已初步融合的信息片段，撰写一份**统一、连贯、结构清晰**的分析报告，以回答用户的原始问题。
-
-用户的原始问题是：“{user_query}”。
-用户的意图是：“{intent}”。
-
-**可用信息片段汇总 (请将这些信息视为一个整体进行分析和整合):**
-{combined_context}
-**报告要求:**
-1.  **整合分析**: 不要仅仅罗列片段内容。请**综合**所有相关信息，提炼出关于主要发言人（尤其是用户问题中提到的，如张三、李四等）的角色定位、核心发言特点（语言风格、常用语、讨论倾向等）。
-2.  **结构清晰**: 使用清晰的标题和小标题（例如，“主要发言人分析”、“高光时刻举例”、“总结”等）来组织报告。
-3.  **证据支撑**: 在分析每个发言人的特点时，**引用**上下文信息中的具体发言（“高光时刻”）作为**证据**来支撑你的观点。选择最典型、最有代表性的例子。
-4.  **忽略元信息**: 如果上下文中包含类似 "[处理块...时出错]" 的错误标记，请忽略它们，不要包含在最终报告中。
-5.  **流畅自然**: 报告应语言流畅，逻辑连贯，读起来像一份完整的分析文档。
-
-**请基于以上信息和要求，生成最终的分析报告:**
-"""  # 模板变量是 combined_context
+        synthesis_prompt = SystemPrompts.chat_splitter_synthesis_prompt()  # 模板变量是 combined_context
 
         try:
             synthesis_prompt_template = ChatPromptTemplate.from_template(synthesis_prompt)

@@ -1,1 +1,2 @@
 recursive-include webot/static *
+recursive-include webot/prompts *
