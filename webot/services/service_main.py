@@ -331,8 +331,8 @@ class ServiceMain(Flask):
         def get_timestamp():
             return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        if 'agent' in message:
-            for msg in message['agent']['messages']:
+        if 'post_model_hook' in message:
+            for msg in message['post_model_hook']['messages']:
                 message_id = str(uuid4())
                 content = msg.content
                 if isinstance(content, list):
