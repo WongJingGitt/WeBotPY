@@ -563,7 +563,7 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
             },
             "context": {
                 "description": "AI生成辅助上下文（根据历史消息动态推断得出），仅用于理解对话隐含信息，禁止直接输出到最终结论中。\n"
-                               "在`data`与`meta.context.memories`中，所有提及的联系人应该通过其 `wxid` (格式如 `wxid_example`) 进行权威标识。任何同时出现的自然语言名称(如`data.sender`\`data.remark`\`meta.context.memories`中的人名)仅为参考或历史快照，可能已过时。",
+                               "在`data`与`meta.context.memories`中，所有提及的联系人应该通过其 `wxid` (格式如 `wxid_example`) 进行权威标识。任何同时出现的自然语言名称(如`data.sender`、`data.remark`、`meta.context.memories`中的人名)仅为参考或历史快照，可能已过时。",
                 "memories": memories,
             }
         },
