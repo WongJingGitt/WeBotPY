@@ -5,7 +5,7 @@ CURRENT_PACKAGE_NAME = "webot"
 
 setup(
     name=RELEASE_PACKAGE_NAME,
-    version="0.1.0",
+    version="0.1.1",
     description="一个基于大语言模型 (LLM) 的智能微信助手，专注于本地聊天记录分析与管理。",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
@@ -26,7 +26,7 @@ setup(
         "wxhook",
         "python-docx",
         "zhipuai",
-        "langgraph",
+        "langgraph>=0.4.5",
         "flask_cors",
         "langchain_text_splitters",
         "langgraph-checkpoint-sqlite",
