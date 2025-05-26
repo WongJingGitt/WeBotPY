@@ -146,7 +146,7 @@ def post_model_hook(states: Dict[str, Any]) -> Dict[str, Any]:
         think_chunk_list = [f'> - {chunk_item}' for chunk_item in think_chunk_list if chunk_item.strip()]
         think_content_formatted = '\n> \n'.join(think_chunk_list)
         if think_content_formatted:  # 只有当有实际思考内容时才添加标题
-            think_content_formatted = f"## 思考内容\n\n{think_content_formatted}\n\n-----"
+            think_content_formatted = f"> ## 思考内容\n> \n{think_content_formatted}\n\n-----"
 
     is_tool_call_processed = False
 
