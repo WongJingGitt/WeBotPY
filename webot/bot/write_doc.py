@@ -514,7 +514,7 @@ def write_txt(msg_db_handle: list, micro_msg_db_handle: str | int, wxid, filenam
                     "data_type": "string"
                 },
                 "remark": {
-                    "description": "导出此记录的用户为消息发送者设置的备注名。如果为空，则表示未设置备注。此备注也可能随时间变化。",
+                    "description": "消息发送者的备注名或者别称。如果为空，则表示未设置备注。此备注也可能随时间变化。",
                     "data_type": "string",
                     "presence": "optional"
                 },
