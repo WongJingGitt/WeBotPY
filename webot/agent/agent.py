@@ -143,8 +143,8 @@ def post_model_hook(states: Dict[str, Any]) -> Dict[str, Any]:
         content_after_think = match.group(2).strip()
 
         think_chunk_list = think_text.split('\n')
-        think_chunk_list = [f'- {chunk_item}' for chunk_item in think_chunk_list if chunk_item.strip()]
-        think_content_formatted = '\n\n'.join(think_chunk_list)
+        think_chunk_list = [f'> - {chunk_item}' for chunk_item in think_chunk_list if chunk_item.strip()]
+        think_content_formatted = '\n> \n'.join(think_chunk_list)
         if think_content_formatted:  # 只有当有实际思考内容时才添加标题
             think_content_formatted = f"## 思考内容\n\n{think_content_formatted}\n\n-----"
 
@@ -199,7 +199,11 @@ def post_model_hook(states: Dict[str, Any]) -> Dict[str, Any]:
                     # 假设 content_after_think 是完整的 JSON 字符串，并且 delta.content 可能为 null
                     pass  # content_after_think 已经是包含工具调用的 JSON 字符串了
 
-                last_message.content = f"{think_content_formatted}\n\n{final_display_content}".strip()
+                # 完整输入形式：思考内容 + 工具调用信息(JSON)
+                # last_message.content = f"{think_content_formatted}\n\n```json\n{final_display_content}\n```".strip()
+                # 为节约Token，删除工具调用信息
+                last_message.content = f"{think_content_formatted}\n\n### 开始调用工具...".strip()
+
                 is_tool_call_processed = True
 
     # 3. 如果不是 OpenAI JSON 工具调用，尝试解析 XML 格式的工具调用
@@ -213,7 +217,12 @@ def post_model_hook(states: Dict[str, Any]) -> Dict[str, Any]:
             # 为了显示，我们可以只显示工具调用信息，或者整个 content_after_think
             # 这里使用 xml_tool_call_data['original_tool_call_string'] 来只显示工具调用部分
             tool_call_display = xml_tool_call_data['original_tool_call_string']
-            last_message.content = f"{think_content_formatted}\n\n{tool_call_display}".strip()
+
+            # 完整输入形式：思考内容 + 工具调用信息(JSON)
+            # last_message.content = f"{think_content_formatted}\n\n```json\n{tool_call_display}```".strip()
+
+            # 为节约Token，删除工具调用信息
+            last_message.content = f"{think_content_formatted}\n\n### 开始调用工具...".strip()
             is_tool_call_processed = True
 
     # 4. 如果两种工具调用都未处理，则视为普通文本回复
