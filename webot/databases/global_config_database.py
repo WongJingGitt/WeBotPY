@@ -29,12 +29,15 @@ class LLMConfigDatabase(LocalDatabase):
 
     def _model_init(self):
         _base_model_list = [
+            {"model_name": "glm-z1-flash",
+             "description": "免费的深度推理模型，可以前往<a href='https://open.bigmodel.cn/' target='__blank'>智谱开放平台</a>申请APIKEY使用。**没有VPN的话，推荐使用这个。**",
+             "base_url": "https://open.bigmodel.cn/api/paas/v4/", "model_format_name": "GLM Z1 Flash(推荐)"},
             {"model_name": "glm-4-flash",
              "description": "免费的模型，可以前往<a href='https://open.bigmodel.cn/' target='__blank'>智谱开放平台</a>申请APIKEY使用",
              "base_url": "https://open.bigmodel.cn/api/paas/v4/", "model_format_name": "GLM4 Flash"},
             {"model_name": "gemini-2.0-flash-exp",
-             "description": "免费的模型，需要翻墙，可以前往<a href='https://aistudio.google.com/app/apikey' target='__blank'>谷歌AI Studio</a>申请APIKEY使用",
-             "base_url": "null", "model_format_name": "Gemini 2.0 Flash"},
+             "description": "免费的模型，需要翻墙，可以前往<a href='https://aistudio.google.com/app/apikey' target='__blank'>谷歌AI Studio</a>申请APIKEY使用。**有VPN的话，推荐使用这个。**",
+             "base_url": "null", "model_format_name": "Gemini 2.0 Flash(推荐)"},
             {"model_name": "qwen2.5-14b-instruct-1m",
              "description": "新用户赠送额度，可以前往<a href='https://bailian.console.aliyun.com/' target='__blank'>阿里云百炼</a>申请APIKEY使用",
              "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model_format_name": "通义千问2.5"},
