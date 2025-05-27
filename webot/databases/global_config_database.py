@@ -262,6 +262,20 @@ class LLMConfigDatabase(LocalDatabase):
         """, (model_id,))
         return result.fetchone() is not None
 
+    def get_first_model_with_apikey(self) -> tuple:
+        """
+        获取第一个有APIKEY的模型信息
+        :return: 模型完整信息元组
+        """
+        result = self.execute_query("""
+        SELECT m.model_id, m.model_format_name, m.model_name, a.apikey, m.description, m.base_url
+        FROM model_list m
+        LEFT JOIN apikey_list a ON m.apikey_id = a.apikey_id
+        WHERE m.apikey_id IS NOT NULL
+        LIMIT 1
+        """)
+        return result.fetchone()
+
 
 class MemoryDatabase(LocalDatabase):
     def __init__(self, db_name: str = "memory_database", *args, **kwargs):
@@ -382,4 +396,3 @@ UPDATE memory SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE memory_id = 
         self.execute_query(sql, (content, memory_id), commit=True)
 
         return
-
