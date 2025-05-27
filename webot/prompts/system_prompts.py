@@ -50,3 +50,11 @@ class SystemPrompts:
         :return:
         """
         return SYSTEM_PROMPT_PATH.joinpath("image_recognition_prompt.md").read_text(encoding="utf-8")
+
+    @staticmethod
+    def format_error_prompt() -> str:
+        """
+        格式化错误提示词
+        :return:
+        """
+        return SYSTEM_PROMPT_PATH.joinpath("format_error_prompt.md").read_text(encoding="utf-8")

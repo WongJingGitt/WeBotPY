@@ -19,8 +19,9 @@ from webot.services.service_conversations import ServiceConversations
 from webot.services.service_llm import ServiceLLM
 from webot.databases.conversation_database import ConversationsDatabase
 from webot.databases.global_config_database import LLMConfigDatabase
-from webot.agent.agent import WeBotAgent
+from webot.agent.agent import WeBotAgent, HumanMessage, SystemMessage
 from webot.bot.image_recognition import ImageRecognition
+from webot.prompts.system_prompts import SystemPrompts
 
 from flask import Flask, request, has_request_context, send_file, stream_with_context, Response as FlaskResponse, \
     send_from_directory
@@ -269,14 +270,33 @@ class ServiceMain(Flask):
             except Exception as e:
                 stack_trace = traceback.format_exc()
                 format_err = f'{str(e)}\n {stack_trace}'
+                error_info = format_err
+
+                first_model = self._llm_config_database.get_first_model_with_apikey()
+                if first_model:
+                    agent = WeBotAgent(
+                        model_name=first_model[2],
+                        webot_port=port,
+                        llm_options={"apikey": first_model[3], "base_url": first_model[5]},
+                        username=_bot.info.get('name')
+                    )
+
+                    err_resp = agent.agent.invoke(
+                        {"messages": [HumanMessage(SystemPrompts.format_error_prompt().format(error_info=format_err))]},
+                        config={"configurable": {"thread_id": str(conversation_id)}}
+                    )
+                    err_content = err_resp.get('messages')[-1].content
+                    format_err = err_content
+
+                wechat_message_config_str = dumps({"type": "error", "message": "后端出错", "error_info": error_info})
                 self._save_message(
                     cid=conversation_id,
                     role="assistant",
                     content=format_err,
                     message_id=str(uuid4()),
-                    wechat_message_config=dumps({"type": "error", "message": "后端出错"}),
+                    wechat_message_config=wechat_message_config_str,
                 )
-                yield f"""data: {dumps([{'role': 'assistant', 'content': format_err, 'wechat_message_config': '{"type": "error", "message": "后端出错"}'}])}\n\n"""
+                yield f"""data: {dumps([{'role': 'assistant', 'content': format_err, 'wechat_message_config': wechat_message_config_str}])}\n\n"""
             finally:
                 yield "data: [DONE]\n\n"
 
