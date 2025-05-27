@@ -95,25 +95,33 @@ class ServiceMain(Flask):
         return response.json
 
     def _bot_list(self):
+        query = request.args
+        refresh = query.get('refresh')
+
         response = Response(code=200, message='success',
                             data=[])
         bots = [{"port": port, "info": data.get('info')} for port, data in self._bot.bots.items()]
 
-        if not bots:
-            bots = WeBot.reconnect_bots(
+        if not bots or refresh:
+            print("refresh bot".upper()) if refresh else None
+            reconnect_bots = WeBot.reconnect_bots(
                 faked_version=get_latest_wechat_version(),
                 on_start=self._on_bot_start,
                 on_login=self._on_bot_login
             )
-            print("reconnect_bots", bots)
 
             def run_bot(_bot: WeBot):
-                _bot.run()
+                if not refresh:
+                    _bot.run()
 
-            for bot_item in bots:
+            reconnect_bots_response = []
+            for bot_item in reconnect_bots:
                 t = Thread(target=run_bot, daemon=True, args=(bot_item,))
                 t.start()
                 self._event.wait()
+                reconnect_bots_response.append({"port": bot_item.remote_port, "info": bot_item.info})
+
+            bots = reconnect_bots_response
 
         response.data = bots
 
