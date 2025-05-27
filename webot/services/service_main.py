@@ -119,6 +119,7 @@ class ServiceMain(Flask):
                 t = Thread(target=run_bot, daemon=True, args=(bot_item,))
                 t.start()
                 self._event.wait()
+                self._bot.set_bot(bot_item.remote_port, bot=bot_item, info=asdict(bot_item.info))
                 reconnect_bots_response.append({"port": bot_item.remote_port, "info": bot_item.info})
 
             bots = reconnect_bots_response
