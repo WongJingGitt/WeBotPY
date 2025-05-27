@@ -1,15 +1,20 @@
 import re
+import traceback
 from json import loads
 from os import environ
 from pathlib import Path
-from typing import Literal, List, Dict, NewType
+from typing import Literal, List, Dict, NewType, Optional, Callable, Any
+
+import psutil
+from wxhook.utils import WeChatManager
 
 from webot.bot.contact import Contact
 from webot.bot.write_doc import write_doc, write_txt
 from webot.bot.contact_captor import contact_captor
 
-from wxhook import Bot
-from wxhook.model import Response
+from wxhook import Bot as WxHookBot
+from wxhook.logger import logger
+from wxhook.model import Response, Event
 from zhipuai import ZhipuAI
 
 ExportFileType = NewType("ExportFileType", str)
@@ -23,7 +28,7 @@ class ExportFileTypeList:
     DOCX: ExportFileType = ExportFileType("docx")
 
 
-class WeBot(Bot):
+class WeBot(WxHookBot):
 
     def __init__(self, log_level="info", *args, **kwargs):
         environ['WXHOOK_LOG_LEVEL'] = log_level.upper()
@@ -47,7 +52,8 @@ class WeBot(Bot):
         :return: 返回MSG0数据库的句柄。
         """
 
-        handles = [item.get('handle') for item in self.get_db_info() if re.match(r'^MSG\d+\.db$', item.get('databaseName'))]
+        handles = [item.get('handle') for item in self.get_db_info() if
+                   re.match(r'^MSG\d+\.db$', item.get('databaseName'))]
         return handles
 
     def get_db_info(self) -> List[Dict]:
@@ -223,3 +229,116 @@ class WeBot(Bot):
             "type": "prompt",
             "data": prompt
         }
+
+    @staticmethod
+    def reconnect_bots(
+            on_login: Optional[Callable[[WxHookBot, Event], Any]] = None,
+            on_before_message: Optional[Callable[[WxHookBot, Event], Any]] = None,
+            on_after_message: Optional[Callable[[WxHookBot, Event], Any]] = None,
+            on_start: Optional[Callable[[WxHookBot], Any]] = None,
+            on_stop: Optional[Callable[[WxHookBot], Any]] = None,
+            faked_version: Optional[str] = None,
+            log_level: str = "info"
+    ) -> List["WeBot"]:
+        logger.info("Attempting to reconnect to existing WeBot instances...")
+        manager = WeChatManager()
+        manager.clean()
+
+        config_data = manager.read()
+        active_bots: List[WeBot] = []
+        wechat_instances = config_data.get("wechat", [])
+
+        if not wechat_instances:
+            logger.info("No active WeChat instances found in wxhook.json to reconnect.")
+            return active_bots
+
+        import wxhook
+        original_start_wechat = wxhook.core.start_wechat_with_inject
+        original_get_pid = wxhook.core.get_pid
+        original_manager_get_port = WeChatManager.get_port
+
+        # 用作去重
+        complete_bot = []
+        for wx_info in wechat_instances:
+            pid = wx_info.get("pid")
+            remote_port = wx_info.get("remote_port")
+            server_port = wx_info.get("server_port")
+
+            if f"{remote_port}{server_port}" in complete_bot:
+                continue
+
+            if not all([isinstance(pid, int), isinstance(remote_port, int), isinstance(server_port, int)]):
+                logger.warning(f"Skipping incomplete/invalid WeChat instance info from wxhook.json: {wx_info}")
+                continue
+
+            logger.info(
+                f"Found potential WeChat instance in wxhook.json: PID={pid}, RemotePort={remote_port}, ServerPort={server_port}")
+
+            try:
+
+                if not psutil.pid_exists(pid):
+                    logger.warning(f"PID {pid} from wxhook.json no longer exists. Skipping reconnection.")
+                    continue
+
+                process_check = psutil.Process(pid)
+                if "wechat.exe" not in process_check.name().lower():
+                    logger.warning(
+                        f"PID {pid} ({process_check.name()}) is no longer a WeChat.exe process. Skipping reconnection.")
+                    continue
+
+                def mock_start_wechat(port_arg_from_init: int) -> tuple[int, str]:
+                    if port_arg_from_init != remote_port:
+                        logger.warning(
+                            f"PATCHED start_wechat_with_inject called with unexpected port {port_arg_from_init} (expected {remote_port}), but proceeding with PID {pid}")
+                    else:
+                        logger.info(
+                            f"PATCHED start_wechat_with_inject called with port {port_arg_from_init}, returning PID {pid}")
+                    return 0, str(pid)
+
+                def mock_get_pid_fallback(port_arg_from_init: int) -> tuple[int, int]:
+                    if port_arg_from_init != remote_port:
+                        logger.warning(
+                            f"PATCHED get_pid (fallback) called with unexpected port {port_arg_from_init} (expected {remote_port}), but proceeding with PID {pid}")
+                    else:
+                        logger.info(
+                            f"PATCHED get_pid (fallback) called with port {port_arg_from_init}, returning PID {pid}")
+                    return 0, pid
+
+                def mock_class_manager_get_port_replacement(self_or_cls_ignored) -> tuple[int, int]:
+                    logger.info(
+                        f"PATCHED WeChatManager.get_port (class-level), returning fixed ports: ({remote_port}, {server_port})")
+                    return remote_port, server_port
+
+                wxhook.core.start_wechat_with_inject = mock_start_wechat
+                wxhook.core.get_pid = mock_get_pid_fallback
+                setattr(WeChatManager, 'get_port', mock_class_manager_get_port_replacement)
+
+                logger.info(f"Attempting to create WeBot for existing PID: {pid} with patched utils.")
+
+                bot_instance = WeBot(
+                    log_level=log_level,
+                    on_login=on_login,
+                    on_before_message=on_before_message,
+                    on_after_message=on_after_message,
+                    on_start=on_start,
+                    on_stop=on_stop,
+                    faked_version=faked_version,
+                )
+                active_bots.append(bot_instance)
+                complete_bot.append(f"{remote_port}{server_port}")
+                logger.success(f"Successfully reconnected WeBot for WeChat PID: {pid}")
+
+            except Exception as e:
+                logger.error(f"Failed to reconnect WeBot for PID {pid} using info {wx_info}: {e}")
+                import traceback as tb
+                logger.debug(tb.format_exc())
+            finally:
+                wxhook.core.start_wechat_with_inject = original_start_wechat
+                wxhook.core.get_pid = original_get_pid
+                setattr(WeChatManager, 'get_port', original_manager_get_port)
+
+        if not active_bots:
+            logger.info("No running WeChat instances could be reconnected as WeBots.")
+        else:
+            logger.info(f"Successfully reconnected {len(active_bots)} WeBot instance(s).")
+        return active_bots

@@ -22,7 +22,8 @@ from webot.databases.global_config_database import LLMConfigDatabase
 from webot.agent.agent import WeBotAgent
 from webot.bot.image_recognition import ImageRecognition
 
-from flask import Flask, request, has_request_context, send_file, stream_with_context, Response as FlaskResponse, send_from_directory
+from flask import Flask, request, has_request_context, send_file, stream_with_context, Response as FlaskResponse, \
+    send_from_directory
 from flask_cors import CORS
 from requests import post as http_post
 
@@ -95,7 +96,27 @@ class ServiceMain(Flask):
 
     def _bot_list(self):
         response = Response(code=200, message='success',
-                            data=[{"port": port, "info": data.get('info')} for port, data in self._bot.bots.items()])
+                            data=[])
+        bots = [{"port": port, "info": data.get('info')} for port, data in self._bot.bots.items()]
+
+        if not bots:
+            bots = WeBot.reconnect_bots(
+                faked_version=get_latest_wechat_version(),
+                on_start=self._on_bot_start,
+                on_login=self._on_bot_login
+            )
+            print("reconnect_bots", bots)
+
+            def run_bot(_bot: WeBot):
+                _bot.run()
+
+            for bot_item in bots:
+                t = Thread(target=run_bot, daemon=True, args=(bot_item,))
+                t.start()
+                self._event.wait()
+
+        response.data = bots
+
         return response.json
 
     def _login_heartbeat(self):
