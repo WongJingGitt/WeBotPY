@@ -127,7 +127,6 @@ def post_model_hook(states: Dict[str, Any]) -> Dict[str, Any]:
 
     last_message: AIMessage = messages[-1]
     original_content: str = last_message.content
-
     # 1. 分离 <think> 和后续内容
     think_pattern = r'<think>(.*?)</think>\s*(.*)'
     match = re.match(think_pattern, original_content, re.DOTALL)
@@ -143,7 +142,8 @@ def post_model_hook(states: Dict[str, Any]) -> Dict[str, Any]:
         content_after_think = match.group(2).strip()
 
         think_chunk_list = think_text.split('\n')
-        think_chunk_list = [f'> {"-" if not chunk_item.startswith(" ") else ""} {chunk_item}' for chunk_item in think_chunk_list if chunk_item.strip()]
+        think_chunk_list = [f'> {"-" if not chunk_item.startswith(" ") else ""} {chunk_item}' for chunk_item in
+                            think_chunk_list if chunk_item.strip()]
         think_content_formatted = '\n> \n'.join(think_chunk_list)
         if think_content_formatted:  # 只有当有实际思考内容时才添加标题
             think_content_formatted = f"> **思考内容**\n> \n{think_content_formatted}\n\n-----"
@@ -203,6 +203,7 @@ def post_model_hook(states: Dict[str, Any]) -> Dict[str, Any]:
                 # last_message.content = f"{think_content_formatted}\n\n```json\n{final_display_content}\n```".strip()
                 # 为节约Token，删除工具调用信息
                 last_message.content = f"{think_content_formatted}\n\n### 开始调用工具...".strip()
+                last_message.original_content = original_content
 
                 is_tool_call_processed = True
 
@@ -223,22 +224,30 @@ def post_model_hook(states: Dict[str, Any]) -> Dict[str, Any]:
 
             # 为节约Token，删除工具调用信息
             last_message.content = f"{think_content_formatted}\n\n### 开始调用工具...".strip()
+            last_message.original_content = original_content
             is_tool_call_processed = True
 
     # 4. 如果两种工具调用都未处理，则视为普通文本回复
     if not is_tool_call_processed:
         if think_content_formatted:  # 如果有思考过程
             last_message.content = f"{think_content_formatted}\n\n{content_after_think}".strip()
+            last_message.original_content = original_content
         else:  # 如果没有思考过程，直接就是回复
             last_message.content = content_after_think
+            last_message.original_content = original_content
 
     states['messages'] = [last_message]  # 仅保留最后处理过的消息或更新最后一条消息
     return states
 
 
+# TODO: 记个BUG，GLM Z1把深度思考用引用格式融合到最终的结果中，在后续的对话中直接传递给模型，模型会认为这是输出格式规范，会把正常的输出也使用引用格式。
+#   可以使用System prompt规范输出，但是不合适。
+#   应该在钩子函数中把思考内容和实际回复分离，在后续的对话组装中传递原始格式过去
+
 class WeBotAgent:
 
-    def __init__(self, model_name: str = "glm-4-flash", llm_options: dict = {}, webot_port: int = 19001, username: str = ''):
+    def __init__(self, model_name: str = "glm-4-flash", llm_options: dict = {}, webot_port: int = 19001,
+                 username: str = ''):
         self.llm = LLMFactory.llm(model_name=model_name, **llm_options)
 
         self._sqlite_con = connect(CHECKPOINT_DB_PATH, check_same_thread=False)
